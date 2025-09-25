@@ -4,6 +4,7 @@
 #include <csignal>
 #include <cstdio>
 #include <ctime>
+#include <tuple>
 #include <type_traits>
 #include <memory>
 #include <string>
@@ -21,6 +22,20 @@ namespace {
 constexpr float STARTUP_ANIMATION_SCALE = SwissDesign::ANIMATION_DURATION * 3.0f;
 constexpr uint32_t DEFAULT_COMPOSITOR_VERSION = 5;
 constexpr uint32_t DEFAULT_XDG_VERSION = 5;
+
+template <typename T>
+struct function_traits;
+
+template <typename R, typename... Args>
+struct function_traits<R (*)(Args...)> {
+    using return_type = R;
+    static constexpr std::size_t arity = sizeof...(Args);
+
+    template <std::size_t Index>
+    struct argument {
+        using type = typename std::tuple_element<Index, std::tuple<Args...>>::type;
+    };
+};
 
 void build_projection_matrix(int width, int height, float matrix[9]) {
     matrix[0] = 2.0f / static_cast<float>(width);
@@ -41,9 +56,15 @@ struct timespec get_monotonic_time() {
 }
 
 struct wlr_backend *autocreate_backend(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<
-                      struct wlr_backend *, decltype(&wlr_backend_autocreate), struct wl_display *, struct wlr_session **>) {
-        struct wlr_session *session = nullptr;
+    using traits = function_traits<decltype(&wlr_backend_autocreate)>;
+
+    if constexpr (traits::arity == 2) {
+        using SessionPtrPtr = typename traits::template argument<1>::type;
+        using SessionPtr = std::remove_pointer_t<SessionPtrPtr>;
+
+        static_assert(std::is_pointer_v<SessionPtr>, "Expected pointer to session pointer type");
+
+        SessionPtr session = nullptr;
         return wlr_backend_autocreate(display, &session);
     } else {
         return wlr_backend_autocreate(display);
@@ -51,18 +72,22 @@ struct wlr_backend *autocreate_backend(struct wl_display *display) {
 }
 
 struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_renderer *renderer) {
-    if constexpr (std::is_invocable_r_v<
-                      struct wlr_compositor *, decltype(&wlr_compositor_create), struct wl_display *, uint32_t,
-                      struct wlr_renderer *>) {
-        return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
+    using traits = function_traits<decltype(&wlr_compositor_create)>;
+
+    if constexpr (traits::arity == 3) {
+        using VersionType = typename traits::template argument<1>::type;
+        return wlr_compositor_create(display, static_cast<VersionType>(DEFAULT_COMPOSITOR_VERSION), renderer);
     } else {
         return wlr_compositor_create(display, renderer);
     }
 }
 
 struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<struct wlr_xdg_shell *, decltype(&wlr_xdg_shell_create), struct wl_display *, uint32_t>) {
-        return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
+    using traits = function_traits<decltype(&wlr_xdg_shell_create)>;
+
+    if constexpr (traits::arity == 2) {
+        using VersionType = typename traits::template argument<1>::type;
+        return wlr_xdg_shell_create(display, static_cast<VersionType>(DEFAULT_XDG_VERSION));
     } else {
         return wlr_xdg_shell_create(display);
     }
