@@ -52,7 +52,11 @@ add_custom_target(arolloa_protocol_headers DEPENDS ${XDG_SHELL_HEADER})
 add_dependencies(arolloa_protocols arolloa_protocol_headers)
 
 add_executable(arolloa-compositor
-    src/core/compositor.cpp
+    src/core/compositor_animation.cpp
+    src/core/compositor_input.cpp
+    src/core/compositor_main.cpp
+    src/core/compositor_output.cpp
+    src/core/compositor_server.cpp
     src/core/config.cpp
 )
 add_dependencies(arolloa-compositor arolloa_protocol_headers)

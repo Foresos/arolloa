@@ -233,6 +233,8 @@ void launch_oobe(void);
 
 // C++ only functions
 void animation_tick(ArolloaServer *server);
+void push_animation(ArolloaServer *server, std::unique_ptr<Animation> animation);
+void schedule_startup_animation(ArolloaServer *server);
 std::string get_config_string(const std::string& key, const std::string& default_value);
 int get_config_int(const std::string& key, int default_value);
 bool get_config_bool(const std::string& key, bool default_value);
