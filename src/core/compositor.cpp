@@ -1,6 +1,7 @@
 #include "../../include/arolloa.h"
 
 #include <algorithm>
+#include <concepts>
 #include <csignal>
 #include <cstdio>
 #include <ctime>
@@ -41,8 +42,9 @@ struct timespec get_monotonic_time() {
 }
 
 struct wlr_backend *autocreate_backend(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<
-                      struct wlr_backend *, decltype(&wlr_backend_autocreate), struct wl_display *, struct wlr_session **>) {
+    if constexpr (requires(struct wl_display *d, struct wlr_session **s) {
+                      { wlr_backend_autocreate(d, s) } -> std::same_as<struct wlr_backend *>;
+                  }) {
         struct wlr_session *session = nullptr;
         return wlr_backend_autocreate(display, &session);
     } else {
@@ -51,9 +53,9 @@ struct wlr_backend *autocreate_backend(struct wl_display *display) {
 }
 
 struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_renderer *renderer) {
-    if constexpr (std::is_invocable_r_v<
-                      struct wlr_compositor *, decltype(&wlr_compositor_create), struct wl_display *, uint32_t,
-                      struct wlr_renderer *>) {
+    if constexpr (requires(struct wl_display *d, uint32_t version, struct wlr_renderer *r) {
+                      { wlr_compositor_create(d, version, r) } -> std::same_as<struct wlr_compositor *>;
+                  }) {
         return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
     } else {
         return wlr_compositor_create(display, renderer);
@@ -61,7 +63,9 @@ struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_
 }
 
 struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<struct wlr_xdg_shell *, decltype(&wlr_xdg_shell_create), struct wl_display *, uint32_t>) {
+    if constexpr (requires(struct wl_display *d, uint32_t version) {
+                      { wlr_xdg_shell_create(d, version) } -> std::same_as<struct wlr_xdg_shell *>;
+                  }) {
         return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
     } else {
         return wlr_xdg_shell_create(display);
