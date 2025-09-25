@@ -10,23 +10,9 @@ namespace {
 constexpr uint32_t DEFAULT_COMPOSITOR_VERSION = 5;
 constexpr uint32_t DEFAULT_XDG_VERSION = 5;
 
-using backend_autocreate_fn = decltype(&wlr_backend_autocreate);
-constexpr bool BACKEND_NEEDS_SESSION =
-    std::is_same_v<backend_autocreate_fn,
-                   struct wlr_backend *(*)(struct wl_display *, struct wlr_session **)>;
-
-using compositor_create_fn = decltype(&wlr_compositor_create);
-constexpr bool COMPOSITOR_NEEDS_VERSION =
-    std::is_same_v<compositor_create_fn,
-                   struct wlr_compositor *(*)(struct wl_display *, uint32_t, struct wlr_renderer *)>;
-
-using xdg_shell_create_fn = decltype(&wlr_xdg_shell_create);
-constexpr bool XDG_SHELL_NEEDS_VERSION =
-    std::is_same_v<xdg_shell_create_fn,
-                   struct wlr_xdg_shell *(*)(struct wl_display *, uint32_t)>;
-
 struct wlr_backend *autocreate_backend(struct wl_display *display) {
-    if constexpr (BACKEND_NEEDS_SESSION) {
+    if constexpr (std::is_invocable_r_v<struct wlr_backend *, decltype(wlr_backend_autocreate),
+                                        struct wl_display *, struct wlr_session **>) {
         struct wlr_session *session = nullptr;
         return wlr_backend_autocreate(display, &session);
     } else {
@@ -35,7 +21,8 @@ struct wlr_backend *autocreate_backend(struct wl_display *display) {
 }
 
 struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_renderer *renderer) {
-    if constexpr (COMPOSITOR_NEEDS_VERSION) {
+    if constexpr (std::is_invocable_r_v<struct wlr_compositor *, decltype(wlr_compositor_create),
+                                        struct wl_display *, uint32_t, struct wlr_renderer *>) {
         return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
     } else {
         return wlr_compositor_create(display, renderer);
@@ -43,7 +30,8 @@ struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_
 }
 
 struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
-    if constexpr (XDG_SHELL_NEEDS_VERSION) {
+    if constexpr (std::is_invocable_r_v<struct wlr_xdg_shell *, decltype(wlr_xdg_shell_create),
+                                        struct wl_display *, uint32_t>) {
         return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
     } else {
         return wlr_xdg_shell_create(display);
