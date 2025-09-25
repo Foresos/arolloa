@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+BUILD_DIR="@CMAKE_BINARY_DIR@"
+COMPOSITOR="${BUILD_DIR}/arolloa-compositor"
+
+if [ ! -x "$COMPOSITOR" ]; then
+    echo "Arolloa compositor not found at $COMPOSITOR" >&2
+    echo "Run: cmake --build ${BUILD_DIR}" >&2
+    exit 1
+fi
+
+echo "Launching Arolloa Desktop Environment"
+echo "Use --debug to run nested inside another Wayland compositor."
+
+: "${XDG_RUNTIME_DIR:=/tmp/arolloa-runtime-$USER}"
+mkdir -p "$XDG_RUNTIME_DIR"
+
+exec "$COMPOSITOR" "$@"

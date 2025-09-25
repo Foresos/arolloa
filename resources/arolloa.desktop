@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Arolloa Desktop Environment
+Comment=Swiss-inspired Wayland compositor
+Exec=arolloa-compositor
+Type=Application
+Categories=System;
+Keywords=wayland;compositor;desktop;swiss;
+Icon=arolloa
+StartupNotify=true
