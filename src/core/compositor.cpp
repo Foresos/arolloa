@@ -1,6 +1,7 @@
 #include "../../include/arolloa.h"
 
 #include <algorithm>
+#include <concepts>
 #include <csignal>
 #include <cstdio>
 #include <ctime>
@@ -83,6 +84,7 @@ struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_
 }
 
 struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
+
     using traits = function_traits<decltype(&wlr_xdg_shell_create)>;
 
     if constexpr (traits::arity == 2) {
