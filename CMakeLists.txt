@@ -15,13 +15,13 @@ if (NOT WAYLAND_SCANNER)
 endif()
 
 # wlroots 0.18 tweaked a number of APIs (for example, the output layout factory
-# now requires a wl_display argument) and is the first version our compositor is
-# able to build against without additional compatibility shims.  Some
-# distributions ship parallel pkg-config files ("wlroots-0.18" alongside
-# "wlroots"), while others only expose the generic name with versioned
-# metadata.  Try both variants and fall back to fetching wlroots automatically
-# if no suitable development package is available.
-set(WLROOTS_MIN_VERSION 0.18)
+# now requires a wl_display argument).  We can still target 0.17 for
+# distribution packages, while retaining the ability to fetch 0.18 when newer
+# features are available.  Some distributions ship parallel pkg-config files
+# ("wlroots-0.18" alongside "wlroots"), while others only expose the generic
+# name with versioned metadata.  Try both variants and fall back to fetching
+# wlroots automatically if no suitable development package is available.
+set(WLROOTS_MIN_VERSION 0.17)
 
 pkg_check_modules(WLROOTS_018 QUIET IMPORTED_TARGET wlroots-0.18)
 if (WLROOTS_018_FOUND)
@@ -89,6 +89,7 @@ pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
 pkg_check_modules(GLESV2 REQUIRED IMPORTED_TARGET glesv2)
+pkg_check_modules(GTKMM REQUIRED IMPORTED_TARGET gtkmm-3.0)
 
 pkg_get_variable(WAYLAND_PROTOCOLS_DATADIR wayland-protocols pkgdatadir)
 
@@ -165,6 +166,11 @@ add_executable(arolloa-settings
 target_compile_options(arolloa-settings PRIVATE -Wall -Wextra -Wpedantic)
 
 target_compile_definitions(arolloa-settings PRIVATE "AROLLOA_SETTINGS"
+)
+
+target_link_libraries(arolloa-settings
+    PRIVATE
+        PkgConfig::GTKMM
 )
 
 set(LAUNCH_SCRIPT ${CMAKE_BINARY_DIR}/launch-arolloa.sh)

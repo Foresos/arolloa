@@ -438,5 +438,96 @@ void output_frame(struct wl_listener *listener, void *data) {
         return;
     }
 
+    if (!wlr_output_commit_state(output->wlr_output, &state)) {
+        wlr_output_state_finish(&state);
+        return;
+    }
+
     wlr_output_state_finish(&state);
+}
+
+namespace {
+void remove_output_listeners(ArolloaOutput *output) {
+    if (!output) {
+        return;
+    }
+
+    wl_list_remove(&output->frame.link);
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    wl_list_remove(&output->request_state.link);
+#endif
+    wl_list_remove(&output->link);
+}
+} // namespace
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+static void output_request_state(struct wl_listener *listener, void *data) {
+    ArolloaOutput *output = wl_container_of(listener, output, request_state);
+    const auto *event = static_cast<const struct wlr_output_event_request_state *>(data);
+    if (!event || !event->state) {
+        return;
+    }
+
+    if (!wlr_output_commit_state(output->wlr_output, event->state)) {
+        wlr_log(WLR_ERROR, "Failed to apply requested output state");
+    }
+}
+#endif
+
+void server_new_output(struct wl_listener *listener, void *data) {
+    ArolloaServer *server = wl_container_of(listener, server, new_output);
+    auto *wlr_output = static_cast<struct wlr_output *>(data);
+
+    if (!wlr_output_init_render(wlr_output, server->allocator, server->renderer)) {
+        wlr_log(WLR_ERROR, "Failed to initialize output render resources");
+        return;
+    }
+
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+
+    if (!wl_list_empty(&wlr_output->modes)) {
+        struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
+        if (mode) {
+            wlr_output_state_set_mode(&state, mode);
+        }
+    }
+
+    if (!wlr_output_commit_state(wlr_output, &state)) {
+        wlr_log(WLR_ERROR, "Failed to commit initial output state");
+        wlr_output_state_finish(&state);
+        return;
+    }
+    wlr_output_state_finish(&state);
+
+    ArolloaOutput *output = static_cast<ArolloaOutput *>(calloc(1, sizeof(ArolloaOutput)));
+    if (!output) {
+        return;
+    }
+
+    output->wlr_output = wlr_output;
+    output->server = server;
+    output->last_frame = get_monotonic_time();
+
+    output->frame.notify = output_frame;
+    wl_signal_add(&wlr_output->events.frame, &output->frame);
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    output->request_state.notify = output_request_state;
+    wl_signal_add(&wlr_output->events.request_state, &output->request_state);
+#endif
+
+    output->destroy.notify = [](struct wl_listener *listener, void *data) {
+        (void)data;
+        ArolloaOutput *output = wl_container_of(listener, output, destroy);
+        remove_output_listeners(output);
+        free(output);
+    };
+    wl_signal_add(&wlr_output->events.destroy, &output->destroy);
+
+    wl_list_insert(&server->outputs, &output->link);
+    wlr_output_layout_add_auto(server->output_layout, wlr_output);
+
+    wlr_log(WLR_INFO, "Registered output '%s'", wlr_output->name);
 }
