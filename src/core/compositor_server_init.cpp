@@ -118,11 +118,7 @@ void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
         return;
     }
 
-#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
-    wlr_xdg_decoration_manager_v1_destroy(manager);
-#else
     (void)manager;
-#endif
 }
 
 void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
@@ -130,11 +126,7 @@ void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
         return;
     }
 
-#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
-    wlr_xdg_shell_destroy(shell);
-#else
     (void)shell;
-#endif
 }
 
 void destroy_compositor(struct wlr_compositor *compositor) {
@@ -142,11 +134,7 @@ void destroy_compositor(struct wlr_compositor *compositor) {
         return;
     }
 
-#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
-    wlr_compositor_destroy(compositor);
-#else
     (void)compositor;
-#endif
 }
 } // namespace
 

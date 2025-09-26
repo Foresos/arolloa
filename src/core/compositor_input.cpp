@@ -5,14 +5,12 @@
 #include <cstdlib>
 #include <thread>
 
+#include <wlr/version.h>
+
 #include <linux/input-event-codes.h>
 
 namespace {
 using namespace std::chrono_literals;
-
-uint8_t to_channel(float value) {
-    return static_cast<uint8_t>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
-}
 
 void mark_last_interaction(ArolloaServer *server) {
     if (!server) {
@@ -33,55 +31,6 @@ void spawn_command_async(const std::string &command) {
         }
         std::system(wrapped.c_str());
     }).detach();
-}
-
-std::vector<uint32_t> build_forest_cursor(uint32_t size) {
-    std::vector<uint32_t> pixels(size * size, 0x00000000);
-    const auto body_color = SwissDesign::Forest::MOSS_ACCENT;
-    const auto outline_color = SwissDesign::Forest::BARK;
-    const auto accent_color = SwissDesign::Forest::SUNLIGHT;
-
-    for (uint32_t y = 0; y < size; ++y) {
-        for (uint32_t x = 0; x < size; ++x) {
-            bool fill = false;
-            bool outline = false;
-            bool accent = false;
-
-            if (x <= y && y < size - 5 && x < size / 2) {
-                fill = true;
-                outline = (x == y) || (x == 0) || (y == 0);
-                accent = (x <= 2 && y % 3 == 0);
-            }
-
-            if (y >= size - 5 && x < size / 3) {
-                fill = true;
-                outline = outline || x == 0 || x == size / 3 - 1 || y == size - 1;
-                accent = accent || (y == size - 3 && x == 1);
-            }
-
-            if (!fill && !outline) {
-                continue;
-            }
-
-            SwissDesign::Color color = body_color;
-            if (outline) {
-                color = outline_color;
-            } else if (accent) {
-                color = accent_color;
-            }
-
-            const uint8_t r = to_channel(color.r);
-            const uint8_t g = to_channel(color.g);
-            const uint8_t b = to_channel(color.b);
-            const uint8_t a = to_channel(std::min(color.a, 1.0f));
-            pixels[y * size + x] = (static_cast<uint32_t>(a) << 24) |
-                                   (static_cast<uint32_t>(r) << 16) |
-                                   (static_cast<uint32_t>(g) << 8) |
-                                   static_cast<uint32_t>(b);
-        }
-    }
-
-    return pixels;
 }
 
 void remove_listener_safe(struct wl_listener *listener) {
@@ -253,7 +202,11 @@ void keyboard_handle_key(struct wl_listener *listener, void *data) {
 void cursor_handle_motion(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, cursor_motion);
     auto *event = static_cast<struct wlr_pointer_motion_event *>(data);
-    wlr_cursor_move(server->cursor, event->device, event->delta_x, event->delta_y);
+    struct wlr_input_device *device = nullptr;
+    if (event->pointer) {
+        device = &event->pointer->base;
+    }
+    wlr_cursor_move(server->cursor, device, event->delta_x, event->delta_y);
     server->cursor_x = server->cursor->x;
     server->cursor_y = server->cursor->y;
     mark_last_interaction(server);
@@ -263,7 +216,11 @@ void cursor_handle_motion(struct wl_listener *listener, void *data) {
 void cursor_handle_motion_absolute(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, cursor_motion_absolute);
     auto *event = static_cast<struct wlr_pointer_motion_absolute_event *>(data);
-    wlr_cursor_warp_absolute(server->cursor, event->device, event->x, event->y);
+    struct wlr_input_device *device = nullptr;
+    if (event->pointer) {
+        device = &event->pointer->base;
+    }
+    wlr_cursor_warp_absolute(server->cursor, device, event->x, event->y);
     server->cursor_x = server->cursor->x;
     server->cursor_y = server->cursor->y;
     mark_last_interaction(server);
@@ -286,8 +243,13 @@ void cursor_handle_button(struct wl_listener *listener, void *data) {
 void cursor_handle_axis(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, cursor_axis);
     auto *event = static_cast<struct wlr_pointer_axis_event *>(data);
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta,
+                                 event->delta_discrete, event->source, event->relative_direction);
+#else
     wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta,
                                  event->delta_discrete, event->source);
+#endif
     mark_last_interaction(server);
 }
 
@@ -320,27 +282,13 @@ void ensure_default_cursor(ArolloaServer *server) {
     }
 
     if (server->cursor_mgr) {
-        if (wlr_xcursor_manager_set_cursor_image(server->cursor_mgr, "left_ptr", server->cursor)) {
+        if (auto *xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_mgr, "left_ptr", 1.0f)) {
+            (void)xcursor;
+            wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "left_ptr");
             return;
         }
     }
 
-    if (server->fallback_cursor_pixels.empty()) {
-        server->fallback_cursor_size = 32;
-        server->fallback_cursor_stride = server->fallback_cursor_size * 4;
-        server->fallback_cursor_pixels = build_forest_cursor(server->fallback_cursor_size);
-    }
-
-    if (!server->fallback_cursor_pixels.empty()) {
-        wlr_cursor_set_image(
-            server->cursor,
-            reinterpret_cast<const uint8_t *>(server->fallback_cursor_pixels.data()),
-            static_cast<int32_t>(server->fallback_cursor_stride),
-            server->fallback_cursor_size,
-            server->fallback_cursor_size,
-            1,
-            1);
-    }
 }
 
 void toggle_launcher(ArolloaServer *server) {
