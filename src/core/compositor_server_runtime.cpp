@@ -58,6 +58,21 @@ void server_destroy(ArolloaServer *server) {
         server->output_layout = nullptr;
     }
 
+    if (server->decoration_manager) {
+        wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+        server->decoration_manager = nullptr;
+    }
+
+    if (server->xdg_shell) {
+        wlr_xdg_shell_destroy(server->xdg_shell);
+        server->xdg_shell = nullptr;
+    }
+
+    if (server->compositor) {
+        wlr_compositor_destroy(server->compositor);
+        server->compositor = nullptr;
+    }
+
     if (server->backend) {
         wlr_backend_destroy(server->backend);
         server->backend = nullptr;
