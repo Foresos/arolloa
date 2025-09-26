@@ -25,6 +25,42 @@ void destroy_display(ArolloaServer *server) {
     server->xdg_shell = nullptr;
     server->decoration_manager = nullptr;
 }
+
+void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
+    if (!manager) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_xdg_decoration_manager_v1_destroy(manager);
+#else
+    (void)manager;
+#endif
+}
+
+void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
+    if (!shell) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_xdg_shell_destroy(shell);
+#else
+    (void)shell;
+#endif
+}
+
+void destroy_compositor(struct wlr_compositor *compositor) {
+    if (!compositor) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_compositor_destroy(compositor);
+#else
+    (void)compositor;
+#endif
+}
 } // namespace
 
 void server_run(ArolloaServer *server) {
@@ -59,17 +95,17 @@ void server_destroy(ArolloaServer *server) {
     }
 
     if (server->decoration_manager) {
-        wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+        destroy_decoration_manager(server->decoration_manager);
         server->decoration_manager = nullptr;
     }
 
     if (server->xdg_shell) {
-        wlr_xdg_shell_destroy(server->xdg_shell);
+        destroy_xdg_shell(server->xdg_shell);
         server->xdg_shell = nullptr;
     }
 
     if (server->compositor) {
-        wlr_compositor_destroy(server->compositor);
+        destroy_compositor(server->compositor);
         server->compositor = nullptr;
     }
 

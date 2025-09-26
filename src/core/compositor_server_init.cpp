@@ -103,6 +103,42 @@ bool setup_debug_environment(ArolloaServer *server) {
     server->nested_backend_active = true;
     return true;
 }
+
+void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
+    if (!manager) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_xdg_decoration_manager_v1_destroy(manager);
+#else
+    (void)manager;
+#endif
+}
+
+void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
+    if (!shell) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_xdg_shell_destroy(shell);
+#else
+    (void)shell;
+#endif
+}
+
+void destroy_compositor(struct wlr_compositor *compositor) {
+    if (!compositor) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_compositor_destroy(compositor);
+#else
+    (void)compositor;
+#endif
+}
 } // namespace
 
 void server_init(ArolloaServer *server) {
@@ -242,12 +278,12 @@ void server_init(ArolloaServer *server) {
             server->output_layout = nullptr;
         }
         if (server->decoration_manager) {
-            wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+            destroy_decoration_manager(server->decoration_manager);
             server->decoration_manager = nullptr;
         }
-        wlr_xdg_shell_destroy(server->xdg_shell);
+        destroy_xdg_shell(server->xdg_shell);
         server->xdg_shell = nullptr;
-        wlr_compositor_destroy(server->compositor);
+        destroy_compositor(server->compositor);
         server->compositor = nullptr;
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
@@ -277,12 +313,12 @@ void server_init(ArolloaServer *server) {
             server->output_layout = nullptr;
         }
         if (server->decoration_manager) {
-            wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+            destroy_decoration_manager(server->decoration_manager);
             server->decoration_manager = nullptr;
         }
-        wlr_xdg_shell_destroy(server->xdg_shell);
+        destroy_xdg_shell(server->xdg_shell);
         server->xdg_shell = nullptr;
-        wlr_compositor_destroy(server->compositor);
+        destroy_compositor(server->compositor);
         server->compositor = nullptr;
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
