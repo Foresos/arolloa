@@ -14,7 +14,9 @@ if (NOT WAYLAND_SCANNER)
     message(FATAL_ERROR "wayland-scanner not found. Install wayland-protocols (e.g. sudo apt install wayland-protocols).")
 endif()
 
-# wlroots 0.18 introduced destroy helpers that our compositor relies on.  Some
+# wlroots 0.18 tweaked a number of APIs (for example, the output layout factory
+# now requires a wl_display argument) and is the first version our compositor is
+# able to build against without additional compatibility shims.  Some
 # distributions ship parallel pkg-config files ("wlroots-0.18" alongside
 # "wlroots"), while others only expose the generic name with versioned
 # metadata.  Try both variants and fall back to fetching wlroots automatically

@@ -54,6 +54,15 @@ struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
 #endif
 }
 
+struct wlr_output_layout *create_output_layout(struct wl_display *display) {
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    return wlr_output_layout_create(display);
+#else
+    (void)display;
+    return wlr_output_layout_create();
+#endif
+}
+
 void destroy_display(ArolloaServer *server) {
     if (!server || !server->wl_display) {
         return;
@@ -109,7 +118,7 @@ void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_xdg_decoration_manager_v1_destroy(manager);
 #else
     (void)manager;
@@ -121,7 +130,7 @@ void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_xdg_shell_destroy(shell);
 #else
     (void)shell;
@@ -133,7 +142,7 @@ void destroy_compositor(struct wlr_compositor *compositor) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_compositor_destroy(compositor);
 #else
     (void)compositor;
@@ -257,7 +266,7 @@ void server_init(ArolloaServer *server) {
     }
 
     server->decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
-    server->output_layout = wlr_output_layout_create();
+    server->output_layout = create_output_layout(server->wl_display);
 
     wl_list_init(&server->outputs);
     wl_list_init(&server->views);
