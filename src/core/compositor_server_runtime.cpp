@@ -1,4 +1,5 @@
 #include "../../include/arolloa.h"
+#include <wlr/version.h>
 
 #include <csignal>
 
@@ -44,10 +45,32 @@ void server_destroy(ArolloaServer *server) {
         server->output_layout = nullptr;
     }
 
+    if (server->decoration_manager) {
+        wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+        server->decoration_manager = nullptr;
+    }
+
+    if (server->xdg_shell) {
+        wlr_xdg_shell_destroy(server->xdg_shell);
+        server->xdg_shell = nullptr;
+    }
+
+    if (server->compositor) {
+        wlr_compositor_destroy(server->compositor);
+        server->compositor = nullptr;
+    }
+
     if (server->backend) {
         wlr_backend_destroy(server->backend);
         server->backend = nullptr;
     }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    if (server->session) {
+        wlr_session_destroy(server->session);
+        server->session = nullptr;
+    }
+#endif
 
     if (server->cairo_ctx) {
         cairo_destroy(server->cairo_ctx);

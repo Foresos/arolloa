@@ -1,4 +1,5 @@
 #include "../../include/arolloa.h"
+#include <wlr/version.h>
 
 #include <cstdlib>
 #include <string>
@@ -7,35 +8,49 @@
 #include <unistd.h>
 
 namespace {
+#if defined(WLR_COMPOSITOR_VERSION)
+constexpr uint32_t DEFAULT_COMPOSITOR_VERSION = WLR_COMPOSITOR_VERSION;
+#else
 constexpr uint32_t DEFAULT_COMPOSITOR_VERSION = 5;
-constexpr uint32_t DEFAULT_XDG_VERSION = 5;
+#endif
 
-struct wlr_backend *autocreate_backend(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<struct wlr_backend *, decltype(wlr_backend_autocreate),
-                                        struct wl_display *, struct wlr_session **>) {
-        struct wlr_session *session = nullptr;
-        return wlr_backend_autocreate(display, &session);
-    } else {
-        return wlr_backend_autocreate(display);
+#if defined(WLR_XDG_SHELL_VERSION)
+constexpr uint32_t DEFAULT_XDG_VERSION = WLR_XDG_SHELL_VERSION;
+#else
+constexpr uint32_t DEFAULT_XDG_VERSION = 5;
+#endif
+
+struct wlr_backend *autocreate_backend(ArolloaServer *server) {
+    if (!server) {
+        return nullptr;
     }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    server->session = nullptr;
+    struct wl_event_loop *loop = server->wl_display ? wl_display_get_event_loop(server->wl_display) : nullptr;
+    return wlr_backend_autocreate(loop, &server->session);
+#elif defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    server->session = nullptr;
+    return wlr_backend_autocreate(server->wl_display, &server->session);
+#else
+    return wlr_backend_autocreate(server->wl_display);
+#endif
 }
 
 struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_renderer *renderer) {
-    if constexpr (std::is_invocable_r_v<struct wlr_compositor *, decltype(wlr_compositor_create),
-                                        struct wl_display *, uint32_t, struct wlr_renderer *>) {
-        return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
-    } else {
-        return wlr_compositor_create(display, renderer);
-    }
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
+#else
+    return wlr_compositor_create(display, renderer);
+#endif
 }
 
 struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<struct wlr_xdg_shell *, decltype(wlr_xdg_shell_create),
-                                        struct wl_display *, uint32_t>) {
-        return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
-    } else {
-        return wlr_xdg_shell_create(display);
-    }
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
+#else
+    return wlr_xdg_shell_create(display);
+#endif
 }
 
 void ensure_runtime_dir() {
@@ -81,6 +96,7 @@ void server_init(ArolloaServer *server) {
     }
 
     server->initialized = false;
+    server->session = nullptr;
 
     ensure_runtime_dir();
     setup_debug_environment(server);
@@ -91,15 +107,29 @@ void server_init(ArolloaServer *server) {
         return;
     }
 
-    server->backend = autocreate_backend(server->wl_display);
+    server->backend = autocreate_backend(server);
     if (!server->backend) {
         wlr_log(WLR_ERROR, "Failed to create wlroots backend");
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
         return;
     }
 
     server->renderer = wlr_renderer_autocreate(server->backend);
     if (!server->renderer) {
         wlr_log(WLR_ERROR, "Failed to create renderer");
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
         return;
     }
 
@@ -108,12 +138,34 @@ void server_init(ArolloaServer *server) {
     server->compositor = create_compositor(server->wl_display, server->renderer);
     if (!server->compositor) {
         wlr_log(WLR_ERROR, "Failed to create compositor global");
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
         return;
     }
 
     server->xdg_shell = create_xdg_shell(server->wl_display);
     if (!server->xdg_shell) {
         wlr_log(WLR_ERROR, "Failed to create xdg-shell global");
+        wlr_compositor_destroy(server->compositor);
+        server->compositor = nullptr;
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
         return;
     }
 
@@ -152,11 +204,71 @@ void server_init(ArolloaServer *server) {
     const char *socket = wl_display_add_socket_auto(server->wl_display);
     if (!socket) {
         wlr_log(WLR_ERROR, "Failed to add Wayland socket");
+        if (server->cursor_mgr) {
+            wlr_xcursor_manager_destroy(server->cursor_mgr);
+            server->cursor_mgr = nullptr;
+        }
+        if (server->seat) {
+            wlr_seat_destroy(server->seat);
+            server->seat = nullptr;
+        }
+        if (server->output_layout) {
+            wlr_output_layout_destroy(server->output_layout);
+            server->output_layout = nullptr;
+        }
+        if (server->decoration_manager) {
+            wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+            server->decoration_manager = nullptr;
+        }
+        wlr_xdg_shell_destroy(server->xdg_shell);
+        server->xdg_shell = nullptr;
+        wlr_compositor_destroy(server->compositor);
+        server->compositor = nullptr;
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
         return;
     }
 
     if (!wlr_backend_start(server->backend)) {
         wlr_log(WLR_ERROR, "Failed to start backend");
+        if (server->cursor_mgr) {
+            wlr_xcursor_manager_destroy(server->cursor_mgr);
+            server->cursor_mgr = nullptr;
+        }
+        if (server->seat) {
+            wlr_seat_destroy(server->seat);
+            server->seat = nullptr;
+        }
+        if (server->output_layout) {
+            wlr_output_layout_destroy(server->output_layout);
+            server->output_layout = nullptr;
+        }
+        if (server->decoration_manager) {
+            wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+            server->decoration_manager = nullptr;
+        }
+        wlr_xdg_shell_destroy(server->xdg_shell);
+        server->xdg_shell = nullptr;
+        wlr_compositor_destroy(server->compositor);
+        server->compositor = nullptr;
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
         return;
     }
 
