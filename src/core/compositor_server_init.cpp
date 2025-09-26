@@ -1,4 +1,5 @@
 #include "../../include/arolloa.h"
+#include <wlr/version.h>
 
 #include <cstdlib>
 #include <string>
@@ -11,31 +12,32 @@ constexpr uint32_t DEFAULT_COMPOSITOR_VERSION = 5;
 constexpr uint32_t DEFAULT_XDG_VERSION = 5;
 
 struct wlr_backend *autocreate_backend(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<struct wlr_backend *, decltype(wlr_backend_autocreate),
-                                        struct wl_display *, struct wlr_session **>) {
-        struct wlr_session *session = nullptr;
-        return wlr_backend_autocreate(display, &session);
-    } else {
-        return wlr_backend_autocreate(display);
-    }
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    struct wlr_session *session = nullptr;
+    struct wl_event_loop *loop = display ? wl_display_get_event_loop(display) : nullptr;
+    return wlr_backend_autocreate(loop, &session);
+#elif defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    struct wlr_session *session = nullptr;
+    return wlr_backend_autocreate(display, &session);
+#else
+    return wlr_backend_autocreate(display);
+#endif
 }
 
 struct wlr_compositor *create_compositor(struct wl_display *display, struct wlr_renderer *renderer) {
-    if constexpr (std::is_invocable_r_v<struct wlr_compositor *, decltype(wlr_compositor_create),
-                                        struct wl_display *, uint32_t, struct wlr_renderer *>) {
-        return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
-    } else {
-        return wlr_compositor_create(display, renderer);
-    }
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    return wlr_compositor_create(display, DEFAULT_COMPOSITOR_VERSION, renderer);
+#else
+    return wlr_compositor_create(display, renderer);
+#endif
 }
 
 struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
-    if constexpr (std::is_invocable_r_v<struct wlr_xdg_shell *, decltype(wlr_xdg_shell_create),
-                                        struct wl_display *, uint32_t>) {
-        return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
-    } else {
-        return wlr_xdg_shell_create(display);
-    }
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+    return wlr_xdg_shell_create(display, DEFAULT_XDG_VERSION);
+#else
+    return wlr_xdg_shell_create(display);
+#endif
 }
 
 void ensure_runtime_dir() {
