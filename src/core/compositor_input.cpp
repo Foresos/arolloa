@@ -13,9 +13,9 @@
 namespace {
 using namespace std::chrono_literals;
 
+
 void show_system_notification(ArolloaServer *server, const std::string &title, const std::string &body);
 void show_volume_change(ArolloaServer *server, int level);
-
 void mark_last_interaction(ArolloaServer *server) {
     if (!server) {
         return;
@@ -301,6 +301,7 @@ void cursor_handle_axis(struct wl_listener *listener, void *data) {
     wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta,
                                  event->delta_discrete, event->source);
 #endif
+
     if (pointer_in_panel(server) && server->ui_state.hovered_tray_index >= 0 &&
         server->ui_state.hovered_tray_index < static_cast<int>(server->ui_state.tray_icons.size())) {
         const auto &indicator = server->ui_state.tray_icons[static_cast<std::size_t>(server->ui_state.hovered_tray_index)];
@@ -317,6 +318,7 @@ void cursor_handle_axis(struct wl_listener *listener, void *data) {
             }
         }
     }
+
     mark_last_interaction(server);
 }
 

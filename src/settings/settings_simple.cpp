@@ -9,8 +9,10 @@
 #include <sstream>
 #include <string>
 
+
 #include <gdkmm/screen.h>
 #include <glibmm/miscutils.h>
+
 #include <gtkmm.h>
 
 namespace {
@@ -33,6 +35,7 @@ void ensure_config_directory() {
     try {
         std::filesystem::create_directories(directory);
     } catch (const std::filesystem::filesystem_error &) {
+
     }
 }
 
@@ -94,6 +97,7 @@ bool is_hex_color(const std::string &value) {
     }
     return true;
 }
+
 
 extern "C" {
 void launch_flatpak_manager(void);
@@ -200,8 +204,10 @@ void SwissSettingsWindow::refresh_css() {
     try {
         css_provider_->load_from_data(css.str());
     } catch (const Glib::Error &) {
+
     }
 }
+
 
 void SwissSettingsWindow::build_ui() {
     auto root = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 0);
@@ -502,6 +508,7 @@ void SwissSettingsWindow::apply_defaults() {
     load_from_config();
     refresh_css();
     show_status("Restored Swiss defaults.");
+
 }
 
 void SwissSettingsWindow::update_config_from_ui() {
@@ -514,6 +521,7 @@ void SwissSettingsWindow::update_config_from_ui() {
     config_["appearance.primary_font"] = font_entry_.get_text();
     config_["animation.enabled"] = animation_switch_.get_active() ? "true" : "false";
     config_["animation.duration"] = Glib::Ascii::dtostr(animation_duration_scale_.get_value());
+
 
     const auto accent_hex = rgba_to_hex(accent_button_.get_rgba());
     const auto panel_hex = rgba_to_hex(panel_color_button_.get_rgba());
@@ -553,5 +561,6 @@ bool SwissSettingsWindow::on_delete_event(GdkEventAny *any_event) {
 int main(int argc, char **argv) {
     auto app = Gtk::Application::create(argc, argv, "org.arolloa.settings");
     SwissSettingsWindow window;
+
     return app->run(window);
 }
