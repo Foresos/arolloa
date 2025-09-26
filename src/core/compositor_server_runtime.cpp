@@ -31,7 +31,7 @@ void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_xdg_decoration_manager_v1_destroy(manager);
 #else
     (void)manager;
@@ -43,7 +43,7 @@ void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_xdg_shell_destroy(shell);
 #else
     (void)shell;
@@ -55,7 +55,7 @@ void destroy_compositor(struct wlr_compositor *compositor) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_compositor_destroy(compositor);
 #else
     (void)compositor;
@@ -78,6 +78,20 @@ void server_destroy(ArolloaServer *server) {
     if (!server) {
         return;
     }
+
+    if (server->new_decoration.link.next) {
+        wl_list_remove(&server->new_decoration.link);
+        server->new_decoration.link.next = nullptr;
+        server->new_decoration.link.prev = nullptr;
+    }
+
+    ArolloaView *view = nullptr;
+    ArolloaView *tmp = nullptr;
+    wl_list_for_each_safe(view, tmp, &server->views, link) {
+        wl_list_remove(&view->link);
+        delete view;
+    }
+    wl_list_init(&server->views);
 
     if (server->cursor_mgr) {
         wlr_xcursor_manager_destroy(server->cursor_mgr);
@@ -149,5 +163,6 @@ void server_destroy(ArolloaServer *server) {
     destroy_display(server);
 
     server->animations.clear();
+    server->focused_view = nullptr;
     server->initialized = false;
 }

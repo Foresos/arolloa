@@ -14,7 +14,9 @@ if (NOT WAYLAND_SCANNER)
     message(FATAL_ERROR "wayland-scanner not found. Install wayland-protocols (e.g. sudo apt install wayland-protocols).")
 endif()
 
-# wlroots 0.18 introduced destroy helpers that our compositor relies on.  Some
+# wlroots 0.18 tweaked a number of APIs (for example, the output layout factory
+# now requires a wl_display argument) and is the first version our compositor is
+# able to build against without additional compatibility shims.  Some
 # distributions ship parallel pkg-config files ("wlroots-0.18" alongside
 # "wlroots"), while others only expose the generic name with versioned
 # metadata.  Try both variants and fall back to fetching wlroots automatically
@@ -87,6 +89,8 @@ pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
 pkg_check_modules(GLESV2 REQUIRED IMPORTED_TARGET glesv2)
+pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
+pkg_check_modules(GTK3 QUIET IMPORTED_TARGET gtk+-3.0)
 
 pkg_get_variable(WAYLAND_PROTOCOLS_DATADIR wayland-protocols pkgdatadir)
 
@@ -117,6 +121,7 @@ add_dependencies(arolloa_protocols arolloa_protocol_headers)
 
 add_executable(arolloa-compositor
     src/core/compositor_animation.cpp
+    src/core/compositor_desktop.cpp
     src/core/compositor_input.cpp
     src/core/compositor_main.cpp
     src/core/compositor_output.cpp
@@ -124,6 +129,7 @@ add_executable(arolloa-compositor
     src/core/compositor_server_runtime.cpp
     src/core/compositor_server_xdg.cpp
     src/core/config.cpp
+    src/core/font_manager.cpp
 )
 add_dependencies(arolloa-compositor arolloa_protocol_headers)
 
@@ -149,6 +155,7 @@ target_link_libraries(arolloa-compositor
         PkgConfig::CAIRO
         PkgConfig::PIXMAN
         PkgConfig::XKBCOMMON
+        PkgConfig::FONTCONFIG
         PkgConfig::EGL
         PkgConfig::GLESV2
         Threads::Threads
@@ -156,14 +163,23 @@ target_link_libraries(arolloa-compositor
         ${CMAKE_DL_LIBS}
 )
 
-add_executable(arolloa-settings
-    src/settings/settings_simple.cpp
+set(AROLLOA_SETTINGS_SOURCES
+    src/settings/settings_cli.cpp
+    src/settings/settings_main.cpp
 )
+
+if (GTK3_FOUND)
+    list(APPEND AROLLOA_SETTINGS_SOURCES src/settings/settings_gui.cpp)
+endif()
+
+add_executable(arolloa-settings ${AROLLOA_SETTINGS_SOURCES})
 
 target_compile_options(arolloa-settings PRIVATE -Wall -Wextra -Wpedantic)
 
-target_compile_definitions(arolloa-settings PRIVATE "AROLLOA_SETTINGS"
-)
+if (GTK3_FOUND)
+    target_link_libraries(arolloa-settings PRIVATE PkgConfig::GTK3)
+    target_compile_definitions(arolloa-settings PRIVATE AROLLOA_HAS_GTK)
+endif()
 
 set(LAUNCH_SCRIPT ${CMAKE_BINARY_DIR}/launch-arolloa.sh)
 configure_file(

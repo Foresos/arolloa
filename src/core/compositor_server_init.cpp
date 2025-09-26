@@ -54,6 +54,15 @@ struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
 #endif
 }
 
+struct wlr_output_layout *create_output_layout(struct wl_display *display) {
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    return wlr_output_layout_create(display);
+#else
+    (void)display;
+    return wlr_output_layout_create();
+#endif
+}
+
 void destroy_display(ArolloaServer *server) {
     if (!server || !server->wl_display) {
         return;
@@ -109,7 +118,7 @@ void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_xdg_decoration_manager_v1_destroy(manager);
 #else
     (void)manager;
@@ -121,7 +130,7 @@ void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_xdg_shell_destroy(shell);
 #else
     (void)shell;
@@ -133,11 +142,22 @@ void destroy_compositor(struct wlr_compositor *compositor) {
         return;
     }
 
-#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+#if !defined(WLR_VERSION_NUM) || WLR_VERSION_NUM < ((0 << 16) | (18 << 8) | 0)
     wlr_compositor_destroy(compositor);
 #else
     (void)compositor;
 #endif
+}
+
+void handle_new_decoration(struct wl_listener *listener, void *data) {
+    auto *server = wl_container_of(listener, server, new_decoration);
+    auto *decoration = static_cast<struct wlr_xdg_toplevel_decoration_v1 *>(data);
+    if (!decoration) {
+        return;
+    }
+
+    wlr_xdg_toplevel_decoration_v1_set_mode(
+        decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
 }
 } // namespace
 
@@ -149,6 +169,10 @@ void server_init(ArolloaServer *server) {
     server->initialized = false;
     server->session = nullptr;
     server->allocator = nullptr;
+    server->focused_view = nullptr;
+    server->primary_font.clear();
+    server->secondary_font.clear();
+    server->mono_font.clear();
 
     ensure_runtime_dir();
     setup_debug_environment(server);
@@ -257,7 +281,12 @@ void server_init(ArolloaServer *server) {
     }
 
     server->decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
-    server->output_layout = wlr_output_layout_create();
+    if (server->decoration_manager) {
+        server->new_decoration.notify = handle_new_decoration;
+        wl_signal_add(&server->decoration_manager->events.new_toplevel_decoration,
+                      &server->new_decoration);
+    }
+    server->output_layout = create_output_layout(server->wl_display);
 
     wl_list_init(&server->outputs);
     wl_list_init(&server->views);
@@ -283,10 +312,7 @@ void server_init(ArolloaServer *server) {
     server->ui_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1920, 1080);
     server->cairo_ctx = cairo_create(server->ui_surface);
     server->pango_layout = pango_cairo_create_layout(server->cairo_ctx);
-
-    PangoFontDescription *desc = pango_font_description_from_string((std::string(SwissDesign::PRIMARY_FONT) + " 10").c_str());
-    pango_layout_set_font_description(server->pango_layout, desc);
-    pango_font_description_free(desc);
+    initialize_font_stack(server);
 
     const char *socket = wl_display_add_socket_auto(server->wl_display);
     if (!socket) {

@@ -1,9 +1,85 @@
 #include "../../include/arolloa.h"
+#include <array>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <vector>
 
 // Simple configuration without external dependencies
 static std::map<std::string, std::string> config;
 static std::string config_path;
+
+namespace {
+
+std::string resolve_executable(const std::string &binary_name) {
+    const char *override_dir = std::getenv("AROLLOA_BIN_DIR");
+    const std::filesystem::path candidate = override_dir ? std::filesystem::path(override_dir) / binary_name
+                                                         : std::filesystem::path();
+    if (!candidate.empty() && std::filesystem::exists(candidate)) {
+        return candidate.string();
+    }
+
+    std::array<std::filesystem::path, 3> fallbacks = {
+        std::filesystem::path("./build") / binary_name,
+        std::filesystem::path("./") / binary_name,
+        std::filesystem::path(binary_name),
+    };
+
+    for (const auto &path : fallbacks) {
+        if (std::filesystem::exists(path)) {
+            return path.string();
+        }
+    }
+
+    return binary_name;
+}
+
+void spawn_detached(const std::vector<std::string> &args) {
+    if (args.empty()) {
+        return;
+    }
+
+    pid_t child = fork();
+    if (child < 0) {
+        wlr_log(WLR_ERROR, "Failed to fork for %s: %s", args.front().c_str(), std::strerror(errno));
+        return;
+    }
+
+    if (child > 0) {
+        int status = 0;
+        waitpid(child, &status, 0);
+        return;
+    }
+
+    if (setsid() < 0) {
+        _exit(EXIT_FAILURE);
+    }
+
+    pid_t grandchild = fork();
+    if (grandchild < 0) {
+        _exit(EXIT_FAILURE);
+    }
+
+    if (grandchild > 0) {
+        _exit(EXIT_SUCCESS);
+    }
+
+    std::vector<char *> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto &arg : args) {
+        argv.push_back(const_cast<char *>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    execvp(argv.front(), argv.data());
+    wlr_log(WLR_ERROR, "Failed to exec %s: %s", argv.front(), std::strerror(errno));
+    _exit(EXIT_FAILURE);
+}
+
+} // namespace
 
 void load_swiss_config() {
     const char* home = getenv("HOME");
@@ -44,8 +120,7 @@ void save_swiss_config() {
     // Ensure config directory exists
     const char* home = getenv("HOME");
     if (home) {
-        std::string mkdir_cmd = "mkdir -p " + std::string(home) + "/.config/arolloa";
-        system(mkdir_cmd.c_str());
+        std::filesystem::create_directories(std::string(home) + "/.config/arolloa");
     }
 
     std::ofstream config_file(config_path);
@@ -88,17 +163,17 @@ extern "C" {
 
 // Stub implementations for missing functions
 void launch_settings() {
-    system("./build/arolloa-settings &");
+    spawn_detached({resolve_executable("arolloa-settings")});
 }
 
 void launch_flatpak_manager() {
-    system("./build/arolloa-flatpak &");
+    spawn_detached({resolve_executable("arolloa-flatpak")});
 }
 
 void launch_system_configurator() {
-    system("./build/arolloa-sysconfig &");
+    spawn_detached({resolve_executable("arolloa-sysconfig")});
 }
 
 void launch_oobe() {
-    system("./build/arolloa-oobe &");
+    spawn_detached({resolve_executable("arolloa-oobe")});
 }

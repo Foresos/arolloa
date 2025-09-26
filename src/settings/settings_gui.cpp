@@ -1,5 +1,6 @@
 #include "../../include/arolloa.h"
 #include <gtk/gtk.h>
+#include <string>
 
 class SwissSettings {
 private:
@@ -8,8 +9,6 @@ private:
 
 public:
     void create_ui() {
-        gtk_init(nullptr, nullptr);
-
         // Swiss design: Clean, minimal window
         window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
         gtk_window_set_title(GTK_WINDOW(window), "Arolloa Settings");
@@ -18,37 +17,40 @@ public:
 
         // Apply Swiss design styling
         GtkCssProvider *provider = gtk_css_provider_new();
-        gtk_css_provider_load_from_data(provider, R"CSS(
-            window {
-                background: #ffffff;
-                font-family: "Helvetica", "Arial", sans-serif;
-            }
-            .swiss-header {
-                font-size: 18px;
-                font-weight: bold;
-                color: #cc0000;
-                margin: 16px;
-            }
-            .swiss-section {
-                padding: 8px;
-                border: 1px solid #f2f2f2;
-                margin: 8px;
-            }
-            button {
-                background: #ffffff;
-                border: 1px solid #cccccc;
-                padding: 8px 16px;
-                font-family: "Helvetica", "Arial", sans-serif;
-            }
-            button:hover {
-                background: #f8f8f8;
-            }
-        )CSS", -1, nullptr);
+        const std::string font_stack = SwissDesign::font_stack_css();
+        const std::string css =
+            "window {\n"
+            "    background: #ffffff;\n"
+            "    font-family: " + font_stack + ";\n"
+            "}\n"
+            ".swiss-header {\n"
+            "    font-size: 18px;\n"
+            "    font-weight: bold;\n"
+            "    color: #cc0000;\n"
+            "    margin: 16px;\n"
+            "}\n"
+            ".swiss-section {\n"
+            "    padding: 8px;\n"
+            "    border: 1px solid #f2f2f2;\n"
+            "    margin: 8px;\n"
+            "}\n"
+            "button {\n"
+            "    background: #ffffff;\n"
+            "    border: 1px solid #cccccc;\n"
+            "    padding: 8px 16px;\n"
+            "    font-family: " + font_stack + ";\n"
+            "}\n"
+            "button:hover {\n"
+            "    background: #f8f8f8;\n"
+            "}\n";
+
+        gtk_css_provider_load_from_data(provider, css.c_str(), css.size(), nullptr);
 
         GdkScreen *screen = gdk_screen_get_default();
         gtk_style_context_add_provider_for_screen(screen,
             GTK_STYLE_PROVIDER(provider),
             GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(provider);
 
         // Create notebook for organized settings
         notebook = gtk_notebook_new();
@@ -206,8 +208,13 @@ public:
     }
 };
 
-void launch_settings() {
+bool launch_settings_gui() {
+    if (!gtk_init_check(nullptr, nullptr)) {
+        return false;
+    }
+
     SwissSettings settings;
     settings.create_ui();
     settings.run();
+    return true;
 }
