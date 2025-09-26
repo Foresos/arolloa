@@ -18,7 +18,7 @@ struct timespec get_monotonic_time() {
 }
 } // namespace
 
-void render_swiss_panel(cairo_t *cairo, int width, int height, float opacity) {
+void render_swiss_panel(const ArolloaServer *server, cairo_t *cairo, int width, int height, float opacity) {
     (void)height;
     cairo_set_source_rgba(cairo, SwissDesign::WHITE.r, SwissDesign::WHITE.g, SwissDesign::WHITE.b, opacity);
     cairo_rectangle(cairo, 0, 0, width, SwissDesign::PANEL_HEIGHT);
@@ -30,26 +30,33 @@ void render_swiss_panel(cairo_t *cairo, int width, int height, float opacity) {
     cairo_line_to(cairo, width, SwissDesign::PANEL_HEIGHT - 1);
     cairo_stroke(cairo);
 
+    const std::string font_family = (server && !server->primary_font.empty())
+        ? server->primary_font
+        : SwissDesign::PRIMARY_FONT;
+
     cairo_set_source_rgba(cairo, SwissDesign::SWISS_RED.r, SwissDesign::SWISS_RED.g, SwissDesign::SWISS_RED.b, opacity);
-    cairo_select_font_face(cairo, SwissDesign::PRIMARY_FONT, CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_select_font_face(cairo, font_family.c_str(), CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cairo, 14);
     cairo_move_to(cairo, 16, 20);
     cairo_show_text(cairo, "Arolloa");
 }
 
 void render_swiss_window(cairo_t *cairo, ArolloaView *view, float global_opacity) {
-    if (!view->mapped) {
+    if (!view->mapped || view->is_minimized) {
         return;
     }
 
     const float opacity = view->opacity * global_opacity;
+    const int width = view->width > 0 ? view->width : 400;
+    const int height = view->height > 0 ? view->height : 300;
+
     cairo_set_source_rgba(cairo, SwissDesign::WHITE.r, SwissDesign::WHITE.g, SwissDesign::WHITE.b, opacity * 0.9f);
-    cairo_rectangle(cairo, view->x, view->y, 400, 300);
+    cairo_rectangle(cairo, view->x, view->y, width, height);
     cairo_fill(cairo);
 
     cairo_set_source_rgba(cairo, SwissDesign::GREY.r, SwissDesign::GREY.g, SwissDesign::GREY.b, opacity);
     cairo_set_line_width(cairo, SwissDesign::BORDER_WIDTH);
-    cairo_rectangle(cairo, view->x, view->y, 400, 300);
+    cairo_rectangle(cairo, view->x, view->y, width, height);
     cairo_stroke(cairo);
 }
 
@@ -72,7 +79,7 @@ void render_swiss_ui(ArolloaServer *server, ArolloaOutput *output) {
     cairo_paint(server->cairo_ctx);
 
     const float opacity = std::clamp(server->startup_opacity, 0.0f, 1.0f);
-    render_swiss_panel(server->cairo_ctx, width, height, opacity);
+    render_swiss_panel(server, server->cairo_ctx, width, height, opacity);
 
     ArolloaView *view = nullptr;
     wl_list_for_each(view, &server->views, link) {

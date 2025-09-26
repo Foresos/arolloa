@@ -51,13 +51,16 @@ struct wlr_session;
 }
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -71,6 +74,60 @@ namespace SwissDesign {
     constexpr const char* PRIMARY_FONT = "Helvetica";
     constexpr const char* SECONDARY_FONT = "Arial";
     constexpr const char* MONO_FONT = "Monaco";
+
+#ifdef __cplusplus
+    inline constexpr std::array<const char *, 6> PRIMARY_FONT_CANDIDATES = {
+        "Inter",
+        "Noto Sans",
+        "DejaVu Sans",
+        "Ubuntu",
+        "Cantarell",
+        PRIMARY_FONT,
+    };
+
+    inline constexpr std::array<const char *, 5> SECONDARY_FONT_CANDIDATES = {
+        "Source Sans Pro",
+        "IBM Plex Sans",
+        "Roboto",
+        SECONDARY_FONT,
+        "Liberation Sans",
+    };
+
+    inline constexpr std::array<const char *, 4> MONO_FONT_CANDIDATES = {
+        "JetBrains Mono",
+        "Fira Mono",
+        MONO_FONT,
+        "monospace",
+    };
+
+    inline std::string build_font_stack(std::span<const char *const> fonts) {
+        std::ostringstream oss;
+        bool first = true;
+        for (const char *font : fonts) {
+            if (!font || font[0] == '\0') {
+                continue;
+            }
+            if (!first) {
+                oss << ", ";
+            }
+            oss << '"' << font << '"';
+            first = false;
+        }
+        if (!first) {
+            oss << ", ";
+        }
+        oss << "sans-serif";
+        return oss.str();
+    }
+
+    inline std::string font_stack_css() {
+        return build_font_stack(PRIMARY_FONT_CANDIDATES);
+    }
+
+    inline std::string mono_font_stack_css() {
+        return build_font_stack(MONO_FONT_CANDIDATES);
+    }
+#endif
 
     // Grid System - Mathematical precision
     constexpr int GRID_UNIT = 8; // Base grid unit in pixels
@@ -132,15 +189,32 @@ enum class WindowLayout {
 
 struct ArolloaView {
     struct wlr_xdg_surface *xdg_surface;
+    struct wlr_xdg_toplevel *toplevel;
     struct ArolloaServer *server;
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;
     struct wl_listener request_move;
     struct wl_listener request_resize;
+    struct wl_listener request_maximize;
+    struct wl_listener request_fullscreen;
+    struct wl_listener request_minimize;
+    struct wl_listener request_show_window_menu;
+    struct wl_listener set_title;
+    struct wl_listener set_app_id;
+    struct wl_listener set_parent;
     bool mapped;
     int x, y;
+    int width;
+    int height;
+    bool is_fullscreen;
+    bool is_maximized;
+    bool is_minimized;
 #ifdef __cplusplus
+    float opacity;
+    std::string title;
+    std::string app_id;
+#else
     float opacity;
 #endif
     struct wl_list link;
@@ -182,6 +256,7 @@ struct ArolloaServer {
     struct wl_listener new_input;
     struct wl_listener request_cursor;
     struct wl_listener request_set_selection;
+    struct wl_listener new_decoration;
 
     struct wl_list outputs;
     struct wl_list views;
@@ -194,6 +269,10 @@ struct ArolloaServer {
     bool nested_backend_active{false};
     bool initialized{false};
     float startup_opacity{0.0f};
+    ArolloaView *focused_view{nullptr};
+    std::string primary_font;
+    std::string secondary_font;
+    std::string mono_font;
 #endif
 
     // Swiss design state
@@ -219,7 +298,7 @@ void output_frame(struct wl_listener *listener, void *data);
 
 // Swiss design rendering
 void render_swiss_ui(struct ArolloaServer *server, struct ArolloaOutput *output);
-void render_swiss_panel(cairo_t *cairo, int width, int height, float opacity);
+void render_swiss_panel(const struct ArolloaServer *server, cairo_t *cairo, int width, int height, float opacity);
 void render_swiss_window(cairo_t *cairo, struct ArolloaView *view, float global_opacity);
 
 // Configuration
@@ -242,4 +321,7 @@ void schedule_startup_animation(ArolloaServer *server);
 std::string get_config_string(const std::string& key, const std::string& default_value);
 int get_config_int(const std::string& key, int default_value);
 bool get_config_bool(const std::string& key, bool default_value);
+void arrange_views(ArolloaServer *server);
+void focus_view(ArolloaServer *server, ArolloaView *view);
+void initialize_font_stack(ArolloaServer *server);
 #endif

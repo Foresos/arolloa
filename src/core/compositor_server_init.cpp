@@ -148,6 +148,17 @@ void destroy_compositor(struct wlr_compositor *compositor) {
     (void)compositor;
 #endif
 }
+
+void handle_new_decoration(struct wl_listener *listener, void *data) {
+    auto *server = wl_container_of(listener, server, new_decoration);
+    auto *decoration = static_cast<struct wlr_xdg_toplevel_decoration_v1 *>(data);
+    if (!decoration) {
+        return;
+    }
+
+    wlr_xdg_toplevel_decoration_v1_set_mode(
+        decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
+}
 } // namespace
 
 void server_init(ArolloaServer *server) {
@@ -158,6 +169,10 @@ void server_init(ArolloaServer *server) {
     server->initialized = false;
     server->session = nullptr;
     server->allocator = nullptr;
+    server->focused_view = nullptr;
+    server->primary_font.clear();
+    server->secondary_font.clear();
+    server->mono_font.clear();
 
     ensure_runtime_dir();
     setup_debug_environment(server);
@@ -266,6 +281,12 @@ void server_init(ArolloaServer *server) {
     }
 
     server->decoration_manager = wlr_xdg_decoration_manager_v1_create(server->wl_display);
+    if (server->decoration_manager) {
+        server->new_decoration.notify = handle_new_decoration;
+        wl_signal_add(&server->decoration_manager->events.new_toplevel_decoration,
+                      &server->new_decoration);
+    }
+
     server->output_layout = create_output_layout(server->wl_display);
 
     wl_list_init(&server->outputs);
@@ -292,10 +313,7 @@ void server_init(ArolloaServer *server) {
     server->ui_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1920, 1080);
     server->cairo_ctx = cairo_create(server->ui_surface);
     server->pango_layout = pango_cairo_create_layout(server->cairo_ctx);
-
-    PangoFontDescription *desc = pango_font_description_from_string((std::string(SwissDesign::PRIMARY_FONT) + " 10").c_str());
-    pango_layout_set_font_description(server->pango_layout, desc);
-    pango_font_description_free(desc);
+    initialize_font_stack(server);
 
     const char *socket = wl_display_add_socket_auto(server->wl_display);
     if (!socket) {

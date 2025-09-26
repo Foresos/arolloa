@@ -79,6 +79,20 @@ void server_destroy(ArolloaServer *server) {
         return;
     }
 
+    if (server->new_decoration.link.next) {
+        wl_list_remove(&server->new_decoration.link);
+        server->new_decoration.link.next = nullptr;
+        server->new_decoration.link.prev = nullptr;
+    }
+
+    ArolloaView *view = nullptr;
+    ArolloaView *tmp = nullptr;
+    wl_list_for_each_safe(view, tmp, &server->views, link) {
+        wl_list_remove(&view->link);
+        delete view;
+    }
+    wl_list_init(&server->views);
+
     if (server->cursor_mgr) {
         wlr_xcursor_manager_destroy(server->cursor_mgr);
         server->cursor_mgr = nullptr;
@@ -149,5 +163,6 @@ void server_destroy(ArolloaServer *server) {
     destroy_display(server);
 
     server->animations.clear();
+    server->focused_view = nullptr;
     server->initialized = false;
 }
