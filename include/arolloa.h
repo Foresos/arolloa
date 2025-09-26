@@ -18,6 +18,7 @@ extern "C" {
 #  endif
 #endif
 struct wlr_session;
+#include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_compositor.h>
@@ -158,6 +159,7 @@ struct ArolloaOutput {
     struct ArolloaServer *server;
     struct timespec last_frame;
     struct wl_listener frame;
+    struct wl_listener request_state;
     struct wl_listener destroy;
     struct wl_list link;
 };
@@ -167,6 +169,7 @@ struct ArolloaServer {
     struct wlr_backend *backend;
     struct wlr_session *session;
     struct wlr_renderer *renderer;
+    struct wlr_allocator *allocator;
     struct wlr_compositor *compositor;
     struct wlr_xdg_shell *xdg_shell;
     struct wlr_seat *seat;

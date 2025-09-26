@@ -4,19 +4,9 @@
 #include <cstdlib>
 #include <ctime>
 
-namespace {
-void build_projection_matrix(int width, int height, float matrix[9]) {
-    matrix[0] = 2.0f / static_cast<float>(width);
-    matrix[1] = 0.0f;
-    matrix[2] = 0.0f;
-    matrix[3] = 0.0f;
-    matrix[4] = 2.0f / static_cast<float>(height);
-    matrix[5] = 0.0f;
-    matrix[6] = -1.0f;
-    matrix[7] = -1.0f;
-    matrix[8] = 1.0f;
-}
+#include <wlr/render/pass.h>
 
+namespace {
 float linear_interpolate(float from, float to, float t) {
     return from + (to - from) * t;
 }
@@ -94,19 +84,12 @@ void output_frame(struct wl_listener *listener, void *data) {
     (void)data;
     ArolloaOutput *output = wl_container_of(listener, output, frame);
     ArolloaServer *server = output->server;
-    struct wlr_renderer *renderer = server->renderer;
 
     const struct timespec now = get_monotonic_time();
-
-    if (!wlr_output_attach_render(output->wlr_output, nullptr)) {
-        return;
-    }
 
     int width = 0;
     int height = 0;
     wlr_output_effective_resolution(output->wlr_output, &width, &height);
-
-    wlr_renderer_begin(renderer, width, height);
 
     const float fade = std::clamp(server->startup_opacity, 0.0f, 1.0f);
     const float background[4] = {
@@ -115,10 +98,31 @@ void output_frame(struct wl_listener *listener, void *data) {
         linear_interpolate(SwissDesign::LIGHT_GREY.b, SwissDesign::WHITE.b, fade),
         1.0f
     };
-    wlr_renderer_clear(renderer, background);
 
-    float projection[9];
-    build_projection_matrix(width, height, projection);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+
+    struct wlr_render_pass *render_pass = wlr_output_begin_render_pass(output->wlr_output, &state, nullptr, nullptr);
+    if (!render_pass) {
+        wlr_output_state_finish(&state);
+        return;
+    }
+
+    const struct wlr_box background_box = {
+        .x = 0,
+        .y = 0,
+        .width = width,
+        .height = height,
+    };
+    struct wlr_render_rect_options background_rect = {};
+    background_rect.box = background_box;
+    background_rect.color = {
+        .r = background[0] * background[3],
+        .g = background[1] * background[3],
+        .b = background[2] * background[3],
+        .a = background[3],
+    };
+    wlr_render_pass_add_rect(render_pass, &background_rect);
 
     const struct wlr_box panel_box = {
         .x = 0,
@@ -126,13 +130,15 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = SwissDesign::PANEL_HEIGHT
     };
-    const float panel_color[4] = {
-        SwissDesign::WHITE.r,
-        SwissDesign::WHITE.g,
-        SwissDesign::WHITE.b,
-        fade
+    struct wlr_render_rect_options panel_rect = {};
+    panel_rect.box = panel_box;
+    panel_rect.color = {
+        .r = SwissDesign::WHITE.r * fade,
+        .g = SwissDesign::WHITE.g * fade,
+        .b = SwissDesign::WHITE.b * fade,
+        .a = fade,
     };
-    wlr_render_rect(renderer, &panel_box, panel_color, projection);
+    wlr_render_pass_add_rect(render_pass, &panel_rect);
 
     const struct wlr_box accent_box = {
         .x = 0,
@@ -140,13 +146,15 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = SwissDesign::BORDER_WIDTH
     };
-    const float accent_color[4] = {
-        SwissDesign::SWISS_RED.r,
-        SwissDesign::SWISS_RED.g,
-        SwissDesign::SWISS_RED.b,
-        fade
+    struct wlr_render_rect_options accent_rect = {};
+    accent_rect.box = accent_box;
+    accent_rect.color = {
+        .r = SwissDesign::SWISS_RED.r * fade,
+        .g = SwissDesign::SWISS_RED.g * fade,
+        .b = SwissDesign::SWISS_RED.b * fade,
+        .a = fade,
     };
-    wlr_render_rect(renderer, &accent_box, accent_color, projection);
+    wlr_render_pass_add_rect(render_pass, &accent_rect);
 
     animation_tick(server);
 
@@ -173,28 +181,62 @@ void output_frame(struct wl_listener *listener, void *data) {
             .height = surface->current.height
         };
 
-        wlr_render_texture(renderer, texture, projection, box.x, box.y, alpha);
+        struct wlr_render_texture_options texture_options = {};
+        texture_options.texture = texture;
+        texture_options.dst_box = box;
+        if (alpha < 1.0f) {
+            texture_options.alpha = &alpha;
+        }
+        wlr_render_pass_add_texture(render_pass, &texture_options);
 
         wlr_surface_send_frame_done(surface, &now);
     }
 
-    wlr_renderer_end(renderer);
-    wlr_output_commit(output->wlr_output);
+    if (!wlr_render_pass_submit(render_pass)) {
+        wlr_output_state_finish(&state);
+        return;
+    }
+
+    if (!wlr_output_commit_state(output->wlr_output, &state)) {
+        wlr_output_state_finish(&state);
+        return;
+    }
+
+    wlr_output_state_finish(&state);
+}
+
+static void output_request_state(struct wl_listener *listener, void *data) {
+    ArolloaOutput *output = wl_container_of(listener, output, request_state);
+    const auto *event = static_cast<const struct wlr_output_event_request_state *>(data);
+    wlr_output_commit_state(output->wlr_output, event->state);
 }
 
 void server_new_output(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, new_output);
     auto *wlr_output = static_cast<struct wlr_output *>(data);
 
+    if (!wlr_output_init_render(wlr_output, server->allocator, server->renderer)) {
+        wlr_log(WLR_ERROR, "Failed to initialize output render resources");
+        return;
+    }
+
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+
     if (!wl_list_empty(&wlr_output->modes)) {
         struct wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-        wlr_output_set_mode(wlr_output, mode);
-        wlr_output_enable(wlr_output, true);
-        if (!wlr_output_commit(wlr_output)) {
-            wlr_log(WLR_ERROR, "Failed to commit output mode");
-            return;
+        if (mode) {
+            wlr_output_state_set_mode(&state, mode);
         }
     }
+
+    if (!wlr_output_commit_state(wlr_output, &state)) {
+        wlr_log(WLR_ERROR, "Failed to commit initial output state");
+        wlr_output_state_finish(&state);
+        return;
+    }
+    wlr_output_state_finish(&state);
 
     ArolloaOutput *output = static_cast<ArolloaOutput *>(calloc(1, sizeof(ArolloaOutput)));
     if (!output) {
@@ -208,10 +250,14 @@ void server_new_output(struct wl_listener *listener, void *data) {
     output->frame.notify = output_frame;
     wl_signal_add(&wlr_output->events.frame, &output->frame);
 
+    output->request_state.notify = output_request_state;
+    wl_signal_add(&wlr_output->events.request_state, &output->request_state);
+
     output->destroy.notify = [](struct wl_listener *listener, void *data) {
         (void)data;
         ArolloaOutput *output = wl_container_of(listener, output, destroy);
         wl_list_remove(&output->frame.link);
+        wl_list_remove(&output->request_state.link);
         wl_list_remove(&output->link);
         free(output);
     };
