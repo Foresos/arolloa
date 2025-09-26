@@ -98,9 +98,16 @@ target_compile_definitions(arolloa-settings PRIVATE "AROLLOA_SETTINGS"
 )
 
 set(LAUNCH_SCRIPT ${CMAKE_BINARY_DIR}/launch-arolloa.sh)
-configure_file(resources/launch-arolloa.sh.in ${LAUNCH_SCRIPT} @ONLY)
+configure_file(
+    resources/launch-arolloa.sh.in
+    ${LAUNCH_SCRIPT}
+    @ONLY
+    FILE_PERMISSIONS
+        OWNER_READ OWNER_WRITE OWNER_EXECUTE
+        GROUP_READ GROUP_EXECUTE
+        WORLD_READ WORLD_EXECUTE
+)
 add_custom_target(arolloa-launcher ALL
-    COMMAND ${CMAKE_COMMAND} -E chmod +x ${LAUNCH_SCRIPT}
     DEPENDS ${LAUNCH_SCRIPT}
 )
 
