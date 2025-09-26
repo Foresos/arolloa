@@ -79,9 +79,16 @@ void server_destroy(ArolloaServer *server) {
         return;
     }
 
+    teardown_pointer_interactions(server);
+
     if (server->cursor_mgr) {
         wlr_xcursor_manager_destroy(server->cursor_mgr);
         server->cursor_mgr = nullptr;
+    }
+
+    if (server->cursor) {
+        wlr_cursor_destroy(server->cursor);
+        server->cursor = nullptr;
     }
 
     if (server->seat) {
@@ -148,6 +155,10 @@ void server_destroy(ArolloaServer *server) {
 
     destroy_display(server);
 
+    server->fallback_cursor_pixels.clear();
+    server->ui_state.panel_apps.clear();
+    server->ui_state.tray_icons.clear();
+    server->ui_state.launcher_entries.clear();
     server->animations.clear();
     server->initialized = false;
 }

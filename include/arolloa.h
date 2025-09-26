@@ -22,6 +22,7 @@ struct wlr_session;
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
@@ -91,6 +92,15 @@ namespace SwissDesign {
     constexpr Color BLACK{0.0f, 0.0f, 0.0f};
     constexpr Color SWISS_RED{0.8f, 0.0f, 0.0f}; // Accent color
 
+    namespace Forest {
+        constexpr Color CANOPY_DARK{0.047f, 0.121f, 0.086f};
+        constexpr Color CANOPY_MID{0.121f, 0.227f, 0.164f};
+        constexpr Color CANOPY_LIGHT{0.247f, 0.372f, 0.250f};
+        constexpr Color MOSS_ACCENT{0.419f, 0.584f, 0.305f};
+        constexpr Color BARK{0.231f, 0.172f, 0.105f};
+        constexpr Color SUNLIGHT{0.905f, 0.823f, 0.478f};
+    } // namespace Forest
+
     // Layout - Asymmetrical but balanced
     constexpr int PANEL_HEIGHT = 32;
     constexpr int WINDOW_GAP = 8;
@@ -128,6 +138,38 @@ enum class WindowLayout {
     ASYMMETRICAL,
     FLOATING
 };
+
+struct PanelApp {
+    std::string name;
+    std::string command;
+    std::string icon_label;
+};
+
+struct TrayIndicator {
+    std::string label;
+    std::string description;
+    SwissDesign::Color color;
+};
+
+struct LauncherEntry {
+    std::string name;
+    std::string command;
+    std::string description;
+    std::string category;
+};
+
+struct ForestUIState {
+    std::vector<PanelApp> panel_apps;
+    std::vector<TrayIndicator> tray_icons;
+    std::vector<LauncherEntry> launcher_entries;
+    bool launcher_visible{false};
+    std::size_t highlighted_index{0};
+    std::chrono::steady_clock::time_point last_interaction{std::chrono::steady_clock::now()};
+};
+
+constexpr int FOREST_PANEL_MENU_WIDTH = 144;
+constexpr int FOREST_LAUNCHER_WIDTH = 520;
+constexpr int FOREST_LAUNCHER_ENTRY_HEIGHT = 68;
 #endif
 
 struct ArolloaView {
@@ -177,6 +219,16 @@ struct ArolloaServer {
     struct wlr_output_layout *output_layout;
     struct wlr_xdg_decoration_manager_v1 *decoration_manager;
 
+    struct wlr_cursor *cursor;
+    struct wl_listener cursor_motion;
+    struct wl_listener cursor_motion_absolute;
+    struct wl_listener cursor_button;
+    struct wl_listener cursor_axis;
+    struct wl_listener cursor_frame;
+    double cursor_x;
+    double cursor_y;
+    bool pointer_connected;
+
     struct wl_listener new_output;
     struct wl_listener new_xdg_surface;
     struct wl_listener new_input;
@@ -194,6 +246,10 @@ struct ArolloaServer {
     bool nested_backend_active{false};
     bool initialized{false};
     float startup_opacity{0.0f};
+    ForestUIState ui_state{};
+    std::vector<uint32_t> fallback_cursor_pixels{};
+    uint32_t fallback_cursor_stride{0};
+    uint32_t fallback_cursor_size{0};
 #endif
 
     // Swiss design state
@@ -219,8 +275,9 @@ void output_frame(struct wl_listener *listener, void *data);
 
 // Swiss design rendering
 void render_swiss_ui(struct ArolloaServer *server, struct ArolloaOutput *output);
-void render_swiss_panel(cairo_t *cairo, int width, int height, float opacity);
+void render_swiss_panel(cairo_t *cairo, int width, int height, float opacity, const struct ArolloaServer *server);
 void render_swiss_window(cairo_t *cairo, struct ArolloaView *view, float global_opacity);
+void initialize_forest_ui(struct ArolloaServer *server);
 
 // Configuration
 void load_swiss_config(void);
@@ -239,6 +296,12 @@ void launch_oobe(void);
 void animation_tick(ArolloaServer *server);
 void push_animation(ArolloaServer *server, std::unique_ptr<Animation> animation);
 void schedule_startup_animation(ArolloaServer *server);
+void setup_pointer_interactions(struct ArolloaServer *server);
+void teardown_pointer_interactions(struct ArolloaServer *server);
+void ensure_default_cursor(struct ArolloaServer *server);
+void toggle_launcher(struct ArolloaServer *server);
+void focus_launcher_offset(struct ArolloaServer *server, int offset);
+bool activate_launcher_selection(struct ArolloaServer *server);
 std::string get_config_string(const std::string& key, const std::string& default_value);
 int get_config_int(const std::string& key, int default_value);
 bool get_config_bool(const std::string& key, bool default_value);
