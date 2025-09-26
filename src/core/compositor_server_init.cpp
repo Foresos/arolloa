@@ -162,6 +162,11 @@ void server_init(ArolloaServer *server) {
     ensure_runtime_dir();
     setup_debug_environment(server);
 
+    server->cursor = nullptr;
+    server->cursor_x = 0.0;
+    server->cursor_y = 0.0;
+    server->pointer_connected = false;
+
     server->wl_display = wl_display_create();
     if (!server->wl_display) {
         wlr_log(WLR_ERROR, "Failed to create Wayland display");
@@ -284,10 +289,84 @@ void server_init(ArolloaServer *server) {
     wl_signal_add(&server->backend->events.new_input, &server->new_input);
 
     server->seat = wlr_seat_create(server->wl_display, "seat0");
+    if (!server->seat) {
+        wlr_log(WLR_ERROR, "Failed to create seat");
+        if (server->output_layout) {
+            wlr_output_layout_destroy(server->output_layout);
+            server->output_layout = nullptr;
+        }
+        if (server->decoration_manager) {
+            destroy_decoration_manager(server->decoration_manager);
+            server->decoration_manager = nullptr;
+        }
+        destroy_xdg_shell(server->xdg_shell);
+        server->xdg_shell = nullptr;
+        destroy_compositor(server->compositor);
+        server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
+        destroy_display(server);
+        return;
+    }
+
+    server->cursor = wlr_cursor_create();
+    if (!server->cursor) {
+        wlr_log(WLR_ERROR, "Failed to create cursor");
+        if (server->seat) {
+            wlr_seat_destroy(server->seat);
+            server->seat = nullptr;
+        }
+        if (server->output_layout) {
+            wlr_output_layout_destroy(server->output_layout);
+            server->output_layout = nullptr;
+        }
+        if (server->decoration_manager) {
+            destroy_decoration_manager(server->decoration_manager);
+            server->decoration_manager = nullptr;
+        }
+        destroy_xdg_shell(server->xdg_shell);
+        server->xdg_shell = nullptr;
+        destroy_compositor(server->compositor);
+        server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
+        destroy_display(server);
+        return;
+    }
+
+    wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
+
     server->cursor_mgr = wlr_xcursor_manager_create(nullptr, 24);
     if (server->cursor_mgr) {
         wlr_xcursor_manager_load(server->cursor_mgr, 1);
     }
+
+    setup_pointer_interactions(server);
+    ensure_default_cursor(server);
 
     server->ui_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1920, 1080);
     server->cairo_ctx = cairo_create(server->ui_surface);
@@ -300,9 +379,14 @@ void server_init(ArolloaServer *server) {
     const char *socket = wl_display_add_socket_auto(server->wl_display);
     if (!socket) {
         wlr_log(WLR_ERROR, "Failed to add Wayland socket");
+        teardown_pointer_interactions(server);
         if (server->cursor_mgr) {
             wlr_xcursor_manager_destroy(server->cursor_mgr);
             server->cursor_mgr = nullptr;
+        }
+        if (server->cursor) {
+            wlr_cursor_destroy(server->cursor);
+            server->cursor = nullptr;
         }
         if (server->seat) {
             wlr_seat_destroy(server->seat);
@@ -339,9 +423,14 @@ void server_init(ArolloaServer *server) {
 
     if (!wlr_backend_start(server->backend)) {
         wlr_log(WLR_ERROR, "Failed to start backend");
+        teardown_pointer_interactions(server);
         if (server->cursor_mgr) {
             wlr_xcursor_manager_destroy(server->cursor_mgr);
             server->cursor_mgr = nullptr;
+        }
+        if (server->cursor) {
+            wlr_cursor_destroy(server->cursor);
+            server->cursor = nullptr;
         }
         if (server->seat) {
             wlr_seat_destroy(server->seat);
@@ -380,6 +469,7 @@ void server_init(ArolloaServer *server) {
     wlr_log(WLR_INFO, "Running Arolloa on WAYLAND_DISPLAY=%s%s", socket,
             server->debug_mode ? " (debug nested mode)" : "");
 
+    initialize_forest_ui(server);
     schedule_startup_animation(server);
     server->initialized = true;
 }
