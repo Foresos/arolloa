@@ -247,9 +247,6 @@ struct ArolloaServer {
     bool initialized{false};
     float startup_opacity{0.0f};
     ForestUIState ui_state{};
-    std::vector<uint32_t> fallback_cursor_pixels{};
-    uint32_t fallback_cursor_stride{0};
-    uint32_t fallback_cursor_size{0};
 #endif
 
     // Swiss design state
