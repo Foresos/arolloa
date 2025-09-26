@@ -31,6 +31,40 @@ SwissDesign::Color lerp_color(const SwissDesign::Color &a, const SwissDesign::Co
         linear_interpolate(a.a, b.a, t));
 }
 
+SwissDesign::Color color_from_hex(const std::string &hex, const SwissDesign::Color &fallback) {
+    if (hex.size() != 7 || hex.front() != '#') {
+        return fallback;
+    }
+
+    auto parse_channel = [](char high, char low) -> float {
+        auto hex_to_int = [](char c) -> int {
+            if (c >= '0' && c <= '9') {
+                return c - '0';
+            }
+            if (c >= 'a' && c <= 'f') {
+                return 10 + (c - 'a');
+            }
+            if (c >= 'A' && c <= 'F') {
+                return 10 + (c - 'A');
+            }
+            return 0;
+        };
+        const int value = (hex_to_int(high) << 4) | hex_to_int(low);
+        return std::clamp(value / 255.0f, 0.0f, 1.0f);
+    };
+
+    return SwissDesign::Color(
+        parse_channel(hex[1], hex[2]),
+        parse_channel(hex[3], hex[4]),
+        parse_channel(hex[5], hex[6]),
+        1.0f);
+}
+
+SwissDesign::Color lighten(const SwissDesign::Color &color, float amount) {
+    amount = std::clamp(amount, 0.0f, 1.0f);
+    return lerp_color(color, SwissDesign::WHITE, amount);
+}
+
 void set_source_color(cairo_t *cairo, const SwissDesign::Color &color, float opacity) {
     cairo_set_source_rgba(cairo, color.r, color.g, color.b, color.a * opacity);
 }
@@ -76,23 +110,53 @@ void draw_text(cairo_t *cr, PangoLayout *layout, const std::string &text, double
     cairo_restore(cr);
 }
 
+void draw_text_center(cairo_t *cr, PangoLayout *layout, const std::string &text, double x, double y,
+                      const SwissDesign::Color &color, float opacity) {
+    if (!layout) {
+        return;
+    }
+    cairo_save(cr);
+    pango_layout_set_alignment(layout, PANGO_ALIGN_LEFT);
+    pango_layout_set_width(layout, -1);
+    pango_layout_set_text(layout, text.c_str(), -1);
+    int text_width = 0;
+    int text_height = 0;
+    pango_layout_get_pixel_size(layout, &text_width, &text_height);
+    cairo_move_to(cr, x - text_width / 2.0, y);
+    set_source_color(cr, color, opacity);
+    pango_cairo_show_layout(cr, layout);
+    cairo_restore(cr);
+}
+
 void draw_panel_apps(cairo_t *cr, const ArolloaServer *server, float opacity) {
     const double icon_size = 28.0;
-    const double spacing = 12.0;
+    const double spacing = 18.0;
     double x = FOREST_PANEL_MENU_WIDTH + spacing;
     const double y = (SwissDesign::PANEL_HEIGHT - icon_size) / 2.0;
 
-    for (const auto &app : server->ui_state.panel_apps) {
+    for (std::size_t index = 0; index < server->ui_state.panel_apps.size(); ++index) {
+        const auto &app = server->ui_state.panel_apps[index];
+        const bool hovered = static_cast<int>(index) == server->ui_state.hovered_panel_index;
+        const float progress = hovered ? server->ui_state.panel_hover_progress : 0.0f;
+        const float halo_opacity = 0.12f + 0.35f * progress;
+
         cairo_save(cr);
-        cairo_rectangle(cr, x, y, icon_size, icon_size);
-        set_source_color(cr, SwissDesign::Forest::MOSS_ACCENT, opacity * 0.85f);
+        draw_rounded_rect(cr, x - 6.0, y - 3.0, icon_size + 12.0, icon_size + 6.0, 10.0);
+        set_source_color(cr, lighten(server->ui_state.panel_base, hovered ? 0.0f : 0.18f), opacity * halo_opacity);
+        cairo_fill(cr);
+        cairo_restore(cr);
+
+        cairo_save(cr);
+        draw_rounded_rect(cr, x, y, icon_size, icon_size, 8.0);
+        const float accent_mix = hovered ? 0.0f : 0.55f;
+        set_source_color(cr, lighten(server->ui_state.accent_color, accent_mix), opacity * (0.6f + 0.4f * progress));
         cairo_fill(cr);
         cairo_restore(cr);
 
         if (server->pango_layout) {
-            apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 9);
+            apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 10);
             draw_text(cr, server->pango_layout, app.icon_label, x + 6.0, y + 6.0,
-                      SwissDesign::Forest::BARK, opacity);
+                      SwissDesign::WHITE, opacity);
         }
 
         x += icon_size + spacing;
@@ -100,24 +164,36 @@ void draw_panel_apps(cairo_t *cr, const ArolloaServer *server, float opacity) {
 }
 
 void draw_tray_icons(cairo_t *cr, const ArolloaServer *server, int width, float opacity) {
-    double x = static_cast<double>(width) - 16.0;
-    const double icon_size = 22.0;
+    double x = static_cast<double>(width) - 20.0;
+    const double icon_size = 24.0;
 
-    for (auto it = server->ui_state.tray_icons.rbegin(); it != server->ui_state.tray_icons.rend(); ++it) {
+    for (int index = static_cast<int>(server->ui_state.tray_icons.size()) - 1; index >= 0; --index) {
+        const auto &indicator = server->ui_state.tray_icons[static_cast<std::size_t>(index)];
+        const bool hovered = index == server->ui_state.hovered_tray_index;
+        const float progress = hovered ? server->ui_state.tray_hover_progress : 0.0f;
+
         x -= icon_size;
         cairo_save(cr);
-        cairo_arc(cr, x + icon_size / 2.0, SwissDesign::PANEL_HEIGHT / 2.0, icon_size / 2.5, 0, 2 * kPi);
-        set_source_color(cr, it->color, opacity * 0.9f);
+        draw_rounded_rect(cr, x - 6.0, SwissDesign::PANEL_HEIGHT / 2.0 - icon_size / 2.0 - 4.0,
+                          icon_size + 12.0, icon_size + 8.0, 9.0);
+        set_source_color(cr, lighten(server->ui_state.panel_base, hovered ? 0.05f : 0.15f), opacity * (0.2f + 0.4f * progress));
+        cairo_fill(cr);
+        cairo_restore(cr);
+
+        cairo_save(cr);
+        cairo_arc(cr, x + icon_size / 2.0, SwissDesign::PANEL_HEIGHT / 2.0, icon_size / 2.4, 0, 2 * kPi);
+        set_source_color(cr, indicator.color, opacity * (0.65f + 0.35f * progress));
         cairo_fill(cr);
         cairo_restore(cr);
 
         if (server->pango_layout) {
-            apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 8);
-            draw_text(cr, server->pango_layout, it->label, x - 2.0, SwissDesign::PANEL_HEIGHT / 2.0 - 6.0,
-                      SwissDesign::WHITE, opacity, PANGO_ALIGN_LEFT);
+            apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 9);
+            draw_text(cr, server->pango_layout, indicator.label, x - 4.0,
+                      SwissDesign::PANEL_HEIGHT / 2.0 - 7.0, server->ui_state.panel_text,
+                      opacity, PANGO_ALIGN_LEFT);
         }
 
-        x -= 18.0;
+        x -= 20.0;
     }
 }
 
@@ -125,12 +201,14 @@ void draw_panel_branding(cairo_t *cr, const ArolloaServer *server, float opacity
     if (!server->pango_layout) {
         return;
     }
-    apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 14);
-    draw_text(cr, server->pango_layout, "Arolloa", 18.0, SwissDesign::PANEL_HEIGHT / 2.0 - 8.0,
-              SwissDesign::Forest::SUNLIGHT, opacity);
-    apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 9);
-    draw_text(cr, server->pango_layout, "Launcher", FOREST_PANEL_MENU_WIDTH - 58.0, SwissDesign::PANEL_HEIGHT / 2.0 + 2.0,
-              SwissDesign::Forest::CANOPY_LIGHT, opacity, PANGO_ALIGN_RIGHT);
+    apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 15);
+    draw_text(cr, server->pango_layout, "AROLLOA", 20.0, SwissDesign::PANEL_HEIGHT / 2.0 - 9.0,
+              server->ui_state.panel_text, opacity);
+
+    apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 10);
+    draw_text(cr, server->pango_layout, "SWISS MENU", FOREST_PANEL_MENU_WIDTH - 20.0,
+              SwissDesign::PANEL_HEIGHT / 2.0 - 6.0, lighten(server->ui_state.panel_text, 0.4f),
+              opacity, PANGO_ALIGN_RIGHT);
 }
 
 void draw_panel_debug(cairo_t *cr, const ArolloaServer *server, int width, float opacity) {
@@ -138,8 +216,8 @@ void draw_panel_debug(cairo_t *cr, const ArolloaServer *server, int width, float
         return;
     }
     apply_font(server->pango_layout, SwissDesign::MONO_FONT, 9);
-    draw_text(cr, server->pango_layout, format_debug_info(server), width * 0.35,
-              SwissDesign::PANEL_HEIGHT / 2.0 - 6.0, SwissDesign::Forest::SUNLIGHT, opacity);
+    draw_text(cr, server->pango_layout, format_debug_info(server), width * 0.36,
+              SwissDesign::PANEL_HEIGHT / 2.0 - 6.0, lighten(server->ui_state.panel_text, 0.55f), opacity * 0.8f);
 }
 
 void draw_rounded_rect(cairo_t *cr, double x, double y, double width, double height, double radius) {
@@ -157,86 +235,188 @@ void render_launcher_overlay(cairo_t *cr, ArolloaServer *server, int width, int 
     }
 
     cairo_save(cr);
-    set_source_color(cr, SwissDesign::Forest::CANOPY_DARK, 0.55f * opacity);
+    set_source_color(cr, SwissDesign::BLACK, 0.35f * opacity);
     cairo_rectangle(cr, 0, 0, width, height);
     cairo_fill(cr);
 
-    const double panel_width = FOREST_LAUNCHER_WIDTH;
-    const double panel_height = std::min<double>(height * 0.6,
-        std::max<double>(SwissDesign::PANEL_HEIGHT * 4.0,
-            server->ui_state.launcher_entries.size() * FOREST_LAUNCHER_ENTRY_HEIGHT + 120.0));
+    const double panel_width = std::min<double>(FOREST_LAUNCHER_WIDTH, width - 120.0);
+    const double panel_height = std::min<double>(height * 0.62,
+        std::max<double>(SwissDesign::PANEL_HEIGHT * 5.0,
+            server->ui_state.launcher_entries.size() * FOREST_LAUNCHER_ENTRY_HEIGHT + 160.0));
     const double start_x = (width - panel_width) / 2.0;
     const double start_y = (height - panel_height) / 2.0;
 
-    draw_rounded_rect(cr, start_x, start_y, panel_width, panel_height, 18.0);
-    set_source_color(cr, SwissDesign::Forest::CANOPY_LIGHT, 0.95f * opacity);
+    draw_rounded_rect(cr, start_x, start_y, panel_width, panel_height, 22.0);
+    set_source_color(cr, lighten(server->ui_state.panel_base, 0.04f), 0.98f * opacity);
     cairo_fill(cr);
 
-    apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 16);
-    draw_text(cr, server->pango_layout, "Forest Launcher", start_x + 32.0, start_y + 26.0,
-              SwissDesign::Forest::BARK, opacity);
+    cairo_save(cr);
+    draw_rounded_rect(cr, start_x, start_y, panel_width, 64.0, 22.0);
+    set_source_color(cr, server->ui_state.accent_color, 0.12f * opacity);
+    cairo_fill(cr);
+    cairo_restore(cr);
 
-    apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 10);
-    draw_text(cr, server->pango_layout, "Launch curated system tools and applications",
-              start_x + 32.0, start_y + 54.0, SwissDesign::Forest::BARK, opacity * 0.9f);
+    apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 18);
+    draw_text(cr, server->pango_layout, "Swiss Application Grid", start_x + 36.0, start_y + 24.0,
+              server->ui_state.panel_text, opacity);
 
-    double entry_y = start_y + 88.0;
+    apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 11);
+    draw_text(cr, server->pango_layout, "Curated workspaces, tools, and services",
+              start_x + 36.0, start_y + 48.0, lighten(server->ui_state.panel_text, 0.35f), opacity * 0.9f);
+
+    double entry_y = start_y + 96.0;
     std::size_t index = 0;
     for (const auto &entry : server->ui_state.launcher_entries) {
         const bool highlighted = index == server->ui_state.highlighted_index;
         cairo_save(cr);
-        draw_rounded_rect(cr, start_x + 24.0, entry_y, panel_width - 48.0, FOREST_LAUNCHER_ENTRY_HEIGHT - 8.0, 12.0);
+        draw_rounded_rect(cr, start_x + 32.0, entry_y, panel_width - 64.0, FOREST_LAUNCHER_ENTRY_HEIGHT - 10.0, 14.0);
         if (highlighted) {
-            set_source_color(cr, SwissDesign::Forest::MOSS_ACCENT, 0.65f * opacity);
+            set_source_color(cr, server->ui_state.accent_color, 0.55f * opacity);
         } else {
-            set_source_color(cr, SwissDesign::Forest::CANOPY_MID, 0.35f * opacity);
+            set_source_color(cr, lighten(server->ui_state.panel_base, 0.1f), 0.5f * opacity);
         }
         cairo_fill(cr);
         cairo_restore(cr);
 
-        apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 13);
-        draw_text(cr, server->pango_layout, entry.name, start_x + 48.0, entry_y + 12.0,
-                  SwissDesign::WHITE, opacity);
+        apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 15);
+        draw_text(cr, server->pango_layout, entry.name, start_x + 56.0, entry_y + 14.0,
+                  highlighted ? SwissDesign::WHITE : server->ui_state.panel_text, opacity);
 
-        apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 9);
-        draw_text(cr, server->pango_layout, entry.description, start_x + 48.0, entry_y + 32.0,
-                  SwissDesign::Forest::SUNLIGHT, opacity * 0.9f);
+        apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 10);
+        draw_text(cr, server->pango_layout, entry.description, start_x + 56.0, entry_y + 36.0,
+                  lighten(server->ui_state.panel_text, highlighted ? 0.6f : 0.35f), opacity * 0.9f);
 
-        apply_font(server->pango_layout, SwissDesign::MONO_FONT, 8);
-        draw_text(cr, server->pango_layout, entry.category, start_x + panel_width - 120.0,
-                  entry_y + 14.0, SwissDesign::Forest::BARK, opacity, PANGO_ALIGN_RIGHT);
+        apply_font(server->pango_layout, SwissDesign::MONO_FONT, 9);
+        draw_text(cr, server->pango_layout, entry.category, start_x + panel_width - 92.0,
+                  entry_y + 16.0, lighten(server->ui_state.panel_text, 0.5f), opacity, PANGO_ALIGN_RIGHT);
 
         entry_y += FOREST_LAUNCHER_ENTRY_HEIGHT;
         ++index;
     }
 
     apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 9);
-    draw_text(cr, server->pango_layout, "Hint: Super + Space toggles the launcher",
-              start_x + 32.0, start_y + panel_height - 42.0, SwissDesign::Forest::SUNLIGHT, opacity * 0.8f);
+    draw_text(cr, server->pango_layout, "Hint: Super + Space toggles the application grid",
+              start_x + 36.0, start_y + panel_height - 48.0, lighten(server->ui_state.panel_text, 0.45f), opacity * 0.85f);
 
     cairo_restore(cr);
+}
+
+void render_notifications(cairo_t *cr, ArolloaServer *server, int width, float opacity) {
+    if (!server->pango_layout || !server->ui_state.notifications_enabled) {
+        return;
+    }
+
+    double y = SwissDesign::PANEL_HEIGHT + 24.0;
+    const double card_width = 320.0;
+    const double spacing = 16.0;
+    int count = 0;
+
+    for (auto it = server->ui_state.notifications.rbegin(); it != server->ui_state.notifications.rend() && count < 4; ++it, ++count) {
+        const float card_opacity = opacity * it->opacity;
+        if (card_opacity <= 0.01f) {
+            continue;
+        }
+
+        const double card_height = 80.0;
+        const double x = width - card_width - 36.0;
+
+        cairo_save(cr);
+        draw_rounded_rect(cr, x, y, card_width, card_height, 14.0);
+        set_source_color(cr, lighten(server->ui_state.panel_base, 0.12f), card_opacity);
+        cairo_fill(cr);
+        cairo_restore(cr);
+
+        cairo_save(cr);
+        draw_rounded_rect(cr, x, y, 6.0, card_height, 14.0);
+        set_source_color(cr, it->accent, card_opacity * 0.9f);
+        cairo_fill(cr);
+        cairo_restore(cr);
+
+        apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 13);
+        draw_text(cr, server->pango_layout, it->title, x + 20.0, y + 16.0,
+                  server->ui_state.panel_text, card_opacity);
+
+        apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 10);
+        draw_text(cr, server->pango_layout, it->body, x + 20.0, y + 40.0,
+                  lighten(server->ui_state.panel_text, 0.4f), card_opacity * 0.9f);
+
+        y += card_height + spacing;
+    }
+}
+
+void render_volume_overlay(cairo_t *cr, ArolloaServer *server, int width, int height, float opacity) {
+    const float visibility = server->ui_state.volume_feedback.visibility;
+    if (visibility <= 0.01f || !server->pango_layout || !server->ui_state.notifications_enabled) {
+        return;
+    }
+
+    const double overlay_width = 260.0;
+    const double overlay_height = 180.0;
+    const double x = (width - overlay_width) / 2.0;
+    const double y = height * 0.68 - overlay_height / 2.0;
+
+    cairo_save(cr);
+    draw_rounded_rect(cr, x, y, overlay_width, overlay_height, 24.0);
+    set_source_color(cr, lighten(server->ui_state.panel_base, 0.08f), opacity * visibility);
+    cairo_fill(cr);
+    cairo_restore(cr);
+
+    cairo_save(cr);
+    cairo_arc(cr, x + overlay_width / 2.0, y + 46.0, 26.0, 0, 2 * kPi);
+    set_source_color(cr, server->ui_state.accent_color, opacity * visibility * 0.85f);
+    cairo_fill(cr);
+    cairo_restore(cr);
+
+    const double track_x = x + 48.0;
+    const double track_y = y + 108.0;
+    const double track_width = overlay_width - 96.0;
+    const double track_height = 10.0;
+    const double fill_width = track_width * (server->ui_state.volume_feedback.level / 100.0);
+
+    cairo_save(cr);
+    draw_rounded_rect(cr, track_x, track_y, track_width, track_height, 5.0);
+    set_source_color(cr, lighten(server->ui_state.panel_base, 0.25f), opacity * visibility * 0.5f);
+    cairo_fill(cr);
+    cairo_restore(cr);
+
+    cairo_save(cr);
+    draw_rounded_rect(cr, track_x, track_y, fill_width, track_height, 5.0);
+    set_source_color(cr, server->ui_state.accent_color, opacity * visibility * 0.85f);
+    cairo_fill(cr);
+    cairo_restore(cr);
+
+    apply_font(server->pango_layout, SwissDesign::PRIMARY_FONT, 28);
+    draw_text_center(cr, server->pango_layout, std::to_string(server->ui_state.volume_feedback.level) + "%",
+                     x + overlay_width / 2.0, y + 126.0,
+                     server->ui_state.panel_text, opacity * visibility);
+
+    apply_font(server->pango_layout, SwissDesign::SECONDARY_FONT, 10);
+    draw_text_center(cr, server->pango_layout, "Volume", x + overlay_width / 2.0, y + 154.0,
+                     lighten(server->ui_state.panel_text, 0.4f), opacity * visibility);
 }
 
 } // namespace
 
 void render_swiss_panel(cairo_t *cairo, int width, int height, float opacity, const ArolloaServer *server) {
     (void)height;
-    cairo_pattern_t *pattern = cairo_pattern_create_linear(0, 0, 0, SwissDesign::PANEL_HEIGHT);
-    auto top_color = SwissDesign::Forest::CANOPY_DARK;
-    auto bottom_color = SwissDesign::Forest::CANOPY_LIGHT;
-    cairo_pattern_add_color_stop_rgba(pattern, 0.0, top_color.r, top_color.g, top_color.b, opacity);
-    cairo_pattern_add_color_stop_rgba(pattern, 1.0, bottom_color.r, bottom_color.g, bottom_color.b, opacity);
-
     cairo_save(cairo);
     cairo_rectangle(cairo, 0, 0, width, SwissDesign::PANEL_HEIGHT);
-    cairo_set_source(cairo, pattern);
+    set_source_color(cairo, server->ui_state.panel_base, opacity);
     cairo_fill(cairo);
     cairo_restore(cairo);
-    cairo_pattern_destroy(pattern);
+
+    if (server->ui_state.menu_hover_progress > 0.01f) {
+        cairo_save(cairo);
+        cairo_rectangle(cairo, 0, 0, FOREST_PANEL_MENU_WIDTH, SwissDesign::PANEL_HEIGHT);
+        const float intensity = 0.12f + server->ui_state.menu_hover_progress * 0.32f;
+        set_source_color(cairo, server->ui_state.accent_color, opacity * intensity);
+        cairo_fill(cairo);
+        cairo_restore(cairo);
+    }
 
     cairo_save(cairo);
-    cairo_rectangle(cairo, 0, SwissDesign::PANEL_HEIGHT - SwissDesign::BORDER_WIDTH, width, SwissDesign::BORDER_WIDTH);
-    set_source_color(cairo, SwissDesign::Forest::MOSS_ACCENT, opacity);
+    cairo_rectangle(cairo, 0, SwissDesign::PANEL_HEIGHT - 1.0, width, 1.0);
+    set_source_color(cairo, SwissDesign::BLACK, opacity * 0.08f);
     cairo_fill(cairo);
     cairo_restore(cairo);
 
@@ -251,15 +431,76 @@ void render_swiss_window(cairo_t *cairo, ArolloaView *view, float global_opacity
         return;
     }
 
-    const float opacity = view->opacity * global_opacity;
-    set_source_color(cairo, SwissDesign::Forest::CANOPY_LIGHT, opacity * 0.85f);
-    cairo_rectangle(cairo, view->x, view->y, 400, 300);
-    cairo_fill(cairo);
+    if (!view->xdg_surface || !view->xdg_surface->surface) {
+        return;
+    }
 
-    cairo_set_line_width(cairo, SwissDesign::BORDER_WIDTH);
-    set_source_color(cairo, SwissDesign::Forest::BARK, opacity);
-    cairo_rectangle(cairo, view->x, view->y, 400, 300);
-    cairo_stroke(cairo);
+    const int width = view->xdg_surface->surface->current.width;
+    const int height = view->xdg_surface->surface->current.height;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
+    const float opacity = view->opacity * global_opacity;
+    if (opacity <= 0.0f) {
+        return;
+    }
+
+    const double header_height = 34.0;
+    const double shadow_radius = SwissDesign::CORNER_RADIUS + 6.0;
+    const double frame_x = view->x - 8.0;
+    const double frame_y = view->y - header_height - 10.0;
+    const double frame_width = width + 16.0;
+    const double frame_height = header_height + height + 18.0;
+
+    cairo_save(cairo);
+    draw_rounded_rect(cairo, frame_x, frame_y, frame_width, frame_height, shadow_radius);
+    set_source_color(cairo, SwissDesign::BLACK, 0.14f * opacity);
+    cairo_fill(cairo);
+    cairo_restore(cairo);
+
+    cairo_save(cairo);
+    const double chrome_x = view->x - 2.0;
+    const double chrome_y = view->y - header_height;
+    const double chrome_width = width + 4.0;
+    draw_rounded_rect(cairo, chrome_x, chrome_y, chrome_width, header_height + 4.0, SwissDesign::CORNER_RADIUS + 2.0);
+    set_source_color(cairo, lighten(view->server->ui_state.panel_base, 0.08f), opacity * 0.96f);
+    cairo_fill(cairo);
+    cairo_restore(cairo);
+
+    cairo_save(cairo);
+    cairo_rectangle(cairo, chrome_x, chrome_y, chrome_width, 3.0);
+    set_source_color(cairo, view->server->ui_state.accent_color, opacity * 0.9f);
+    cairo_fill(cairo);
+    cairo_restore(cairo);
+
+    const char *title = "";
+    if (view->xdg_surface->toplevel && view->xdg_surface->toplevel->title) {
+        title = view->xdg_surface->toplevel->title;
+    }
+
+    if (view->server->pango_layout) {
+        apply_font(view->server->pango_layout, SwissDesign::PRIMARY_FONT, 12);
+        draw_text(cairo, view->server->pango_layout, title ? title : "Untitled",
+                  chrome_x + 16.0, chrome_y + 10.0, view->server->ui_state.panel_text, opacity);
+    }
+
+    cairo_save(cairo);
+    const double controls_center_y = chrome_y + header_height / 2.0 + 2.0;
+    const double control_spacing = 18.0;
+    double control_x = chrome_x + chrome_width - 28.0;
+    set_source_color(cairo, view->server->ui_state.accent_color, opacity * 0.85f);
+    cairo_arc(cairo, control_x, controls_center_y, 6.0, 0, 2 * kPi);
+    cairo_fill(cairo);
+    control_x -= control_spacing;
+    set_source_color(cairo, lighten(view->server->ui_state.panel_text, 0.4f), opacity * 0.7f);
+    cairo_arc(cairo, control_x, controls_center_y, 6.0, 0, 2 * kPi);
+    cairo_fill(cairo);
+    control_x -= control_spacing;
+    set_source_color(cairo, lighten(view->server->ui_state.panel_text, 0.2f), opacity * 0.5f);
+    cairo_arc(cairo, control_x, controls_center_y, 6.0, 0, 2 * kPi);
+    cairo_fill(cairo);
+    cairo_restore(cairo);
 }
 
 void render_swiss_ui(ArolloaServer *server, ArolloaOutput *output) {
@@ -287,6 +528,14 @@ void render_swiss_ui(ArolloaServer *server, ArolloaOutput *output) {
     render_swiss_panel(server->cairo_ctx, width, height, opacity, server);
     render_launcher_overlay(server->cairo_ctx, server, width, height, opacity);
 
+    ArolloaView *decorated = nullptr;
+    wl_list_for_each(decorated, &server->views, link) {
+        render_swiss_window(server->cairo_ctx, decorated, opacity);
+    }
+
+    render_notifications(server->cairo_ctx, server, width, opacity);
+    render_volume_overlay(server->cairo_ctx, server, width, height, opacity);
+
     cairo_surface_flush(server->ui_surface);
 }
 
@@ -294,6 +543,11 @@ void initialize_forest_ui(ArolloaServer *server) {
     if (!server) {
         return;
     }
+
+    server->ui_state.accent_color = color_from_hex(get_config_string("colors.accent", "#d4001a"), SwissDesign::SWISS_RED);
+    server->ui_state.panel_base = color_from_hex(get_config_string("colors.panel", "#ffffff"), SwissDesign::WHITE);
+    server->ui_state.panel_text = color_from_hex(get_config_string("colors.panel_text", "#1a1a1a"), SwissDesign::BLACK);
+    server->ui_state.notifications_enabled = get_config_bool("notifications.enabled", true);
 
     server->ui_state.panel_apps = {
         {"Files", "thunar", "Fs"},
@@ -319,6 +573,9 @@ void initialize_forest_ui(ArolloaServer *server) {
     server->ui_state.launcher_visible = false;
     server->ui_state.highlighted_index = 0;
     server->ui_state.last_interaction = std::chrono::steady_clock::now();
+    server->ui_state.notifications.clear();
+    server->ui_state.volume_feedback.visibility = 0.0f;
+    server->ui_state.volume_feedback.target_visibility = 0.0f;
 }
 
 void output_frame(struct wl_listener *listener, void *data) {

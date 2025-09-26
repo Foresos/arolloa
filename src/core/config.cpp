@@ -35,6 +35,9 @@ void load_swiss_config() {
         config["colors.background"] = "#ffffff";
         config["colors.foreground"] = "#000000";
         config["colors.accent"] = "#cc0000";
+        config["colors.panel"] = "#ffffff";
+        config["colors.panel_text"] = "#202020";
+        config["notifications.enabled"] = "true";
 
         save_swiss_config();
     }
