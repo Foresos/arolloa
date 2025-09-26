@@ -286,6 +286,7 @@ void server_init(ArolloaServer *server) {
         wl_signal_add(&server->decoration_manager->events.new_toplevel_decoration,
                       &server->new_decoration);
     }
+
     server->output_layout = create_output_layout(server->wl_display);
 
     wl_list_init(&server->outputs);
