@@ -114,14 +114,14 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = height,
     };
-    struct wlr_render_rect_options background_rect = {
-        .box = background_box,
-        .color = {
-            .r = background[0] * background[3],
-            .g = background[1] * background[3],
-            .b = background[2] * background[3],
-            .a = background[3],
-        },
+
+    struct wlr_render_rect_options background_rect = {};
+    background_rect.box = background_box;
+    background_rect.color = {
+        .r = background[0] * background[3],
+        .g = background[1] * background[3],
+        .b = background[2] * background[3],
+        .a = background[3],
     };
     wlr_render_pass_add_rect(render_pass, &background_rect);
 
@@ -131,14 +131,14 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = SwissDesign::PANEL_HEIGHT
     };
-    struct wlr_render_rect_options panel_rect = {
-        .box = panel_box,
-        .color = {
-            .r = SwissDesign::WHITE.r * fade,
-            .g = SwissDesign::WHITE.g * fade,
-            .b = SwissDesign::WHITE.b * fade,
-            .a = fade,
-        },
+
+    struct wlr_render_rect_options panel_rect = {};
+    panel_rect.box = panel_box;
+    panel_rect.color = {
+        .r = SwissDesign::WHITE.r * fade,
+        .g = SwissDesign::WHITE.g * fade,
+        .b = SwissDesign::WHITE.b * fade,
+        .a = fade,
     };
     wlr_render_pass_add_rect(render_pass, &panel_rect);
 
@@ -148,14 +148,13 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = SwissDesign::BORDER_WIDTH
     };
-    struct wlr_render_rect_options accent_rect = {
-        .box = accent_box,
-        .color = {
-            .r = SwissDesign::SWISS_RED.r * fade,
-            .g = SwissDesign::SWISS_RED.g * fade,
-            .b = SwissDesign::SWISS_RED.b * fade,
-            .a = fade,
-        },
+    struct wlr_render_rect_options accent_rect = {};
+    accent_rect.box = accent_box;
+    accent_rect.color = {
+        .r = SwissDesign::SWISS_RED.r * fade,
+        .g = SwissDesign::SWISS_RED.g * fade,
+        .b = SwissDesign::SWISS_RED.b * fade,
+        .a = fade,
     };
     wlr_render_pass_add_rect(render_pass, &accent_rect);
 
@@ -184,10 +183,10 @@ void output_frame(struct wl_listener *listener, void *data) {
             .height = surface->current.height
         };
 
-        struct wlr_render_texture_options texture_options = {
-            .texture = texture,
-            .dst_box = box,
-        };
+
+        struct wlr_render_texture_options texture_options = {};
+        texture_options.texture = texture;
+        texture_options.dst_box = box;
         if (alpha < 1.0f) {
             texture_options.alpha = &alpha;
         }
@@ -207,6 +206,12 @@ void output_frame(struct wl_listener *listener, void *data) {
     }
 
     wlr_output_state_finish(&state);
+}
+
+static void output_request_state(struct wl_listener *listener, void *data) {
+    ArolloaOutput *output = wl_container_of(listener, output, request_state);
+    const auto *event = static_cast<const struct wlr_output_event_request_state *>(data);
+    wlr_output_commit_state(output->wlr_output, event->state);
 }
 
 void server_new_output(struct wl_listener *listener, void *data) {
@@ -248,11 +253,9 @@ void server_new_output(struct wl_listener *listener, void *data) {
     output->frame.notify = output_frame;
     wl_signal_add(&wlr_output->events.frame, &output->frame);
 
-    output->request_state.notify = [](struct wl_listener *listener, void *request_data) {
-        auto *output = wl_container_of(listener, output, request_state);
-        const auto *event = static_cast<const struct wlr_output_event_request_state *>(request_data);
-        wlr_output_commit_state(output->wlr_output, event->state);
-    };
+
+    output->request_state.notify = output_request_state;
+
     wl_signal_add(&wlr_output->events.request_state, &output->request_state);
 
     output->destroy.notify = [](struct wl_listener *listener, void *data) {
