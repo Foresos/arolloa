@@ -20,6 +20,7 @@ constexpr uint32_t DEFAULT_XDG_VERSION = WLR_XDG_SHELL_VERSION;
 constexpr uint32_t DEFAULT_XDG_VERSION = 5;
 #endif
 
+
 struct wlr_backend *autocreate_backend(ArolloaServer *server) {
     if (!server) {
         return nullptr;
