@@ -14,7 +14,71 @@ if (NOT WAYLAND_SCANNER)
     message(FATAL_ERROR "wayland-scanner not found. Install wayland-protocols (e.g. sudo apt install wayland-protocols).")
 endif()
 
-pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET wlroots)
+# wlroots 0.18 introduced destroy helpers that our compositor relies on.  Some
+# distributions ship parallel pkg-config files ("wlroots-0.18" alongside
+# "wlroots"), while others only expose the generic name with versioned
+# metadata.  Try both variants and fall back to fetching wlroots automatically
+# if no suitable development package is available.
+set(WLROOTS_MIN_VERSION 0.18)
+
+pkg_check_modules(WLROOTS_018 QUIET IMPORTED_TARGET wlroots-0.18)
+if (WLROOTS_018_FOUND)
+    set(WLROOTS_TARGET PkgConfig::WLROOTS_018)
+else()
+    pkg_check_modules(WLROOTS QUIET IMPORTED_TARGET "wlroots>=${WLROOTS_MIN_VERSION}")
+    if (WLROOTS_FOUND)
+        set(WLROOTS_TARGET PkgConfig::WLROOTS)
+    endif()
+endif()
+
+if (NOT WLROOTS_TARGET)
+    set(WLROOTS_VENDOR_ROOT ${CMAKE_BINARY_DIR}/cmake/libs/wlroots)
+    set(WLROOTS_FALLBACK_DIR ${WLROOTS_VENDOR_ROOT}/source)
+    set(WLROOTS_FALLBACK_INSTALL ${WLROOTS_VENDOR_ROOT}/install)
+
+    include(FetchContent)
+    FetchContent_Declare(
+        wlroots
+        GIT_REPOSITORY https://gitlab.freedesktop.org/wlroots/wlroots.git
+        GIT_TAG 0.18.1
+    )
+    FetchContent_Populate(wlroots)
+
+    find_program(MESON_EXECUTABLE meson)
+    if (NOT MESON_EXECUTABLE)
+        message(FATAL_ERROR "meson not found. Install meson to build wlroots locally or provide wlroots ${WLROOTS_MIN_VERSION}+ via pkg-config.")
+    endif()
+
+    find_program(NINJA_EXECUTABLE ninja)
+    if (NOT NINJA_EXECUTABLE)
+        message(FATAL_ERROR "ninja not found. Install ninja-build to build wlroots locally or provide wlroots ${WLROOTS_MIN_VERSION}+ via pkg-config.")
+    endif()
+
+    include(ExternalProject)
+    ExternalProject_Add(wlroots_external
+        SOURCE_DIR ${wlroots_SOURCE_DIR}
+        BINARY_DIR ${WLROOTS_VENDOR_ROOT}/build
+        CONFIGURE_COMMAND
+            ${MESON_EXECUTABLE} setup ${WLROOTS_VENDOR_ROOT}/build ${wlroots_SOURCE_DIR}
+            --prefix ${WLROOTS_FALLBACK_INSTALL}
+            --buildtype release
+            --default-library shared
+        BUILD_COMMAND ${MESON_EXECUTABLE} compile -C ${WLROOTS_VENDOR_ROOT}/build
+        INSTALL_COMMAND ${MESON_EXECUTABLE} install -C ${WLROOTS_VENDOR_ROOT}/build
+        BUILD_BYPRODUCTS ${WLROOTS_FALLBACK_INSTALL}/lib/pkgconfig/wlroots.pc
+    )
+
+    set(WLROOTS_IMPORTED libwlroots)
+    add_library(${WLROOTS_IMPORTED} SHARED IMPORTED)
+    add_dependencies(${WLROOTS_IMPORTED} wlroots_external)
+    set_target_properties(${WLROOTS_IMPORTED} PROPERTIES
+        IMPORTED_LOCATION ${WLROOTS_FALLBACK_INSTALL}/lib/libwlroots.so
+        INTERFACE_INCLUDE_DIRECTORIES ${WLROOTS_FALLBACK_INSTALL}/include
+    )
+
+    set(WLROOTS_TARGET ${WLROOTS_IMPORTED})
+    set(WLROOTS_FALLBACK TRUE)
+endif()
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
 pkg_check_modules(PANGOCAIRO REQUIRED IMPORTED_TARGET pangocairo)
@@ -72,10 +136,14 @@ target_include_directories(arolloa-compositor
 target_compile_definitions(arolloa-compositor PRIVATE WLR_USE_UNSTABLE)
 target_compile_options(arolloa-compositor PRIVATE -Wall -Wextra -Wpedantic)
 
+if (WLROOTS_FALLBACK)
+    add_dependencies(arolloa-compositor wlroots_external)
+endif()
+
 target_link_libraries(arolloa-compositor
     PRIVATE
+        ${WLROOTS_TARGET}
         arolloa_protocols
-        PkgConfig::WLROOTS
         PkgConfig::WAYLAND_SERVER
         PkgConfig::PANGOCAIRO
         PkgConfig::CAIRO

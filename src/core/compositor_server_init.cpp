@@ -103,6 +103,42 @@ bool setup_debug_environment(ArolloaServer *server) {
     server->nested_backend_active = true;
     return true;
 }
+
+void destroy_decoration_manager(struct wlr_xdg_decoration_manager_v1 *manager) {
+    if (!manager) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_xdg_decoration_manager_v1_destroy(manager);
+#else
+    (void)manager;
+#endif
+}
+
+void destroy_xdg_shell(struct wlr_xdg_shell *shell) {
+    if (!shell) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_xdg_shell_destroy(shell);
+#else
+    (void)shell;
+#endif
+}
+
+void destroy_compositor(struct wlr_compositor *compositor) {
+    if (!compositor) {
+        return;
+    }
+
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_compositor_destroy(compositor);
+#else
+    (void)compositor;
+#endif
+}
 } // namespace
 
 void server_init(ArolloaServer *server) {
@@ -112,6 +148,7 @@ void server_init(ArolloaServer *server) {
 
     server->initialized = false;
     server->session = nullptr;
+    server->allocator = nullptr;
 
     ensure_runtime_dir();
     setup_debug_environment(server);
@@ -154,11 +191,32 @@ void server_init(ArolloaServer *server) {
         return;
     }
 
+    server->allocator = wlr_allocator_autocreate(server->backend, server->renderer);
+    if (!server->allocator) {
+        wlr_log(WLR_ERROR, "Failed to create allocator");
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
+
+        destroy_display(server);
+
+        return;
+    }
+
     wlr_renderer_init_wl_display(server->renderer, server->wl_display);
 
     server->compositor = create_compositor(server->wl_display, server->renderer);
     if (!server->compositor) {
         wlr_log(WLR_ERROR, "Failed to create compositor global");
+        wlr_allocator_destroy(server->allocator);
+        server->allocator = nullptr;
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
@@ -180,6 +238,10 @@ void server_init(ArolloaServer *server) {
         wlr_log(WLR_ERROR, "Failed to create xdg-shell global");
 
         server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
@@ -242,13 +304,17 @@ void server_init(ArolloaServer *server) {
             server->output_layout = nullptr;
         }
         if (server->decoration_manager) {
-            wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+            destroy_decoration_manager(server->decoration_manager);
             server->decoration_manager = nullptr;
         }
-        wlr_xdg_shell_destroy(server->xdg_shell);
+        destroy_xdg_shell(server->xdg_shell);
         server->xdg_shell = nullptr;
-        wlr_compositor_destroy(server->compositor);
+        destroy_compositor(server->compositor);
         server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
@@ -277,13 +343,17 @@ void server_init(ArolloaServer *server) {
             server->output_layout = nullptr;
         }
         if (server->decoration_manager) {
-            wlr_xdg_decoration_manager_v1_destroy(server->decoration_manager);
+            destroy_decoration_manager(server->decoration_manager);
             server->decoration_manager = nullptr;
         }
-        wlr_xdg_shell_destroy(server->xdg_shell);
+        destroy_xdg_shell(server->xdg_shell);
         server->xdg_shell = nullptr;
-        wlr_compositor_destroy(server->compositor);
+        destroy_compositor(server->compositor);
         server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
