@@ -69,9 +69,9 @@ struct wlr_session;
 // Swiss Design Constants - Based on International Typographic Style
 namespace SwissDesign {
     // Typography - Sans-serif fonts prioritizing clarity
-    constexpr const char* PRIMARY_FONT = "Helvetica";
-    constexpr const char* SECONDARY_FONT = "Arial";
-    constexpr const char* MONO_FONT = "Monaco";
+    constexpr const char* PRIMARY_FONT = "Neue Haas Grotesk Text";
+    constexpr const char* SECONDARY_FONT = "Helvetica Neue";
+    constexpr const char* MONO_FONT = "SFMono-Regular";
 
     // Grid System - Mathematical precision
     constexpr int GRID_UNIT = 8; // Base grid unit in pixels
@@ -86,11 +86,13 @@ namespace SwissDesign {
 
     // Monochromatic palette with accent
     constexpr Color WHITE{1.0f, 1.0f, 1.0f};
-    constexpr Color LIGHT_GREY{0.95f, 0.95f, 0.95f};
-    constexpr Color GREY{0.5f, 0.5f, 0.5f};
-    constexpr Color DARK_GREY{0.2f, 0.2f, 0.2f};
+    constexpr Color LIGHT_GREY{0.925f, 0.925f, 0.925f};
+    constexpr Color GREY{0.52f, 0.52f, 0.52f};
+    constexpr Color DARK_GREY{0.16f, 0.16f, 0.16f};
     constexpr Color BLACK{0.0f, 0.0f, 0.0f};
-    constexpr Color SWISS_RED{0.8f, 0.0f, 0.0f}; // Accent color
+    constexpr Color SWISS_RED{0.84f, 0.0f, 0.07f}; // Accent color
+    constexpr Color SOFT_BLUE{0.0f, 0.34f, 0.6f};
+    constexpr Color MIST{0.89f, 0.9f, 0.92f};
 
     namespace Forest {
         constexpr Color CANOPY_DARK{0.047f, 0.121f, 0.086f};
@@ -102,10 +104,10 @@ namespace SwissDesign {
     } // namespace Forest
 
     // Layout - Asymmetrical but balanced
-    constexpr int PANEL_HEIGHT = 32;
+    constexpr int PANEL_HEIGHT = 36;
     constexpr int WINDOW_GAP = 8;
     constexpr int BORDER_WIDTH = 1;
-    constexpr int CORNER_RADIUS = 4; // Minimal rounding
+    constexpr int CORNER_RADIUS = 6; // Minimal rounding
 
     // Animation - Subtle and functional
     constexpr float ANIMATION_DURATION = 0.2f; // 200ms
@@ -165,6 +167,37 @@ struct ForestUIState {
     bool launcher_visible{false};
     std::size_t highlighted_index{0};
     std::chrono::steady_clock::time_point last_interaction{std::chrono::steady_clock::now()};
+    SwissDesign::Color accent_color{SwissDesign::SWISS_RED};
+    SwissDesign::Color panel_base{SwissDesign::WHITE};
+    SwissDesign::Color panel_text{SwissDesign::BLACK};
+    bool notifications_enabled{true};
+    int hovered_panel_index{-1};
+    int hovered_tray_index{-1};
+    bool menu_hovered{false};
+    float menu_hover_progress{0.0f};
+    float panel_hover_progress{0.0f};
+    float tray_hover_progress{0.0f};
+    std::chrono::steady_clock::time_point last_animation_tick{std::chrono::steady_clock::now()};
+
+    struct Notification {
+        std::string title;
+        std::string body;
+        SwissDesign::Color accent{SwissDesign::SWISS_RED};
+        float opacity{0.0f};
+        float target_opacity{1.0f};
+        float lifetime{4.0f};
+        std::chrono::steady_clock::time_point created{std::chrono::steady_clock::now()};
+        bool is_volume{false};
+        int volume_level{0};
+    };
+    std::vector<Notification> notifications;
+
+    struct VolumeFeedback {
+        int level{65};
+        float visibility{0.0f};
+        float target_visibility{0.0f};
+        std::chrono::steady_clock::time_point last_update{std::chrono::steady_clock::now()};
+    } volume_feedback;
 };
 
 constexpr int FOREST_PANEL_MENU_WIDTH = 144;
@@ -247,9 +280,6 @@ struct ArolloaServer {
     bool initialized{false};
     float startup_opacity{0.0f};
     ForestUIState ui_state{};
-    std::vector<uint32_t> fallback_cursor_pixels{};
-    uint32_t fallback_cursor_stride{0};
-    uint32_t fallback_cursor_size{0};
 #endif
 
     // Swiss design state
@@ -302,6 +332,9 @@ void ensure_default_cursor(struct ArolloaServer *server);
 void toggle_launcher(struct ArolloaServer *server);
 void focus_launcher_offset(struct ArolloaServer *server, int offset);
 bool activate_launcher_selection(struct ArolloaServer *server);
+void update_pointer_hover_state(struct ArolloaServer *server);
+void show_system_notification(struct ArolloaServer *server, const std::string &title, const std::string &body);
+void show_volume_change(struct ArolloaServer *server, int level);
 std::string get_config_string(const std::string& key, const std::string& default_value);
 int get_config_int(const std::string& key, int default_value);
 bool get_config_bool(const std::string& key, bool default_value);

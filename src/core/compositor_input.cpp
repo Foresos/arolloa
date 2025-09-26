@@ -3,16 +3,18 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <cmath>
 #include <thread>
+
+#include <wlr/version.h>
 
 #include <linux/input-event-codes.h>
 
 namespace {
 using namespace std::chrono_literals;
 
-uint8_t to_channel(float value) {
-    return static_cast<uint8_t>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
-}
+void show_system_notification(ArolloaServer *server, const std::string &title, const std::string &body);
+void show_volume_change(ArolloaServer *server, int level);
 
 void mark_last_interaction(ArolloaServer *server) {
     if (!server) {
@@ -35,53 +37,57 @@ void spawn_command_async(const std::string &command) {
     }).detach();
 }
 
-std::vector<uint32_t> build_forest_cursor(uint32_t size) {
-    std::vector<uint32_t> pixels(size * size, 0x00000000);
-    const auto body_color = SwissDesign::Forest::MOSS_ACCENT;
-    const auto outline_color = SwissDesign::Forest::BARK;
-    const auto accent_color = SwissDesign::Forest::SUNLIGHT;
+bool pointer_in_panel(const ArolloaServer *server) {
+    return server && server->cursor_y <= static_cast<double>(SwissDesign::PANEL_HEIGHT);
+}
 
-    for (uint32_t y = 0; y < size; ++y) {
-        for (uint32_t x = 0; x < size; ++x) {
-            bool fill = false;
-            bool outline = false;
-            bool accent = false;
-
-            if (x <= y && y < size - 5 && x < size / 2) {
-                fill = true;
-                outline = (x == y) || (x == 0) || (y == 0);
-                accent = (x <= 2 && y % 3 == 0);
-            }
-
-            if (y >= size - 5 && x < size / 3) {
-                fill = true;
-                outline = outline || x == 0 || x == size / 3 - 1 || y == size - 1;
-                accent = accent || (y == size - 3 && x == 1);
-            }
-
-            if (!fill && !outline) {
-                continue;
-            }
-
-            SwissDesign::Color color = body_color;
-            if (outline) {
-                color = outline_color;
-            } else if (accent) {
-                color = accent_color;
-            }
-
-            const uint8_t r = to_channel(color.r);
-            const uint8_t g = to_channel(color.g);
-            const uint8_t b = to_channel(color.b);
-            const uint8_t a = to_channel(std::min(color.a, 1.0f));
-            pixels[y * size + x] = (static_cast<uint32_t>(a) << 24) |
-                                   (static_cast<uint32_t>(r) << 16) |
-                                   (static_cast<uint32_t>(g) << 8) |
-                                   static_cast<uint32_t>(b);
-        }
+void update_pointer_hover_state(ArolloaServer *server) {
+    if (!server) {
+        return;
     }
 
-    return pixels;
+    server->ui_state.menu_hovered = false;
+    server->ui_state.hovered_panel_index = -1;
+    server->ui_state.hovered_tray_index = -1;
+
+    if (!pointer_in_panel(server)) {
+        return;
+    }
+
+    server->ui_state.menu_hovered = server->cursor_x <= FOREST_PANEL_MENU_WIDTH;
+
+    const double icon_size = 28.0;
+    const double spacing = 12.0;
+    double local_x = server->cursor_x - FOREST_PANEL_MENU_WIDTH - spacing;
+    for (std::size_t index = 0; index < server->ui_state.panel_apps.size(); ++index) {
+        if (local_x >= 0.0 && local_x <= icon_size) {
+            server->ui_state.hovered_panel_index = static_cast<int>(index);
+            break;
+        }
+        local_x -= icon_size + spacing;
+    }
+
+    int width = 0;
+    int height = 0;
+    if (auto *output = wlr_output_layout_output_at(server->output_layout, server->cursor_x, server->cursor_y)) {
+        wlr_output_effective_resolution(output, &width, &height);
+    }
+
+    if (width <= 0) {
+        return;
+    }
+
+    const double tray_icon = 22.0;
+    const double tray_spacing = 18.0;
+    double anchor = static_cast<double>(width) - 16.0;
+    for (int index = static_cast<int>(server->ui_state.tray_icons.size()) - 1; index >= 0; --index) {
+        anchor -= tray_icon;
+        if (server->cursor_x >= anchor && server->cursor_x <= anchor + tray_icon) {
+            server->ui_state.hovered_tray_index = index;
+            break;
+        }
+        anchor -= tray_spacing;
+    }
 }
 
 void remove_listener_safe(struct wl_listener *listener) {
@@ -93,10 +99,6 @@ void remove_listener_safe(struct wl_listener *listener) {
         listener->link.prev = nullptr;
         listener->link.next = nullptr;
     }
-}
-
-bool pointer_in_panel(const ArolloaServer *server) {
-    return server && server->cursor_y <= static_cast<double>(SwissDesign::PANEL_HEIGHT);
 }
 
 bool handle_launcher_click(ArolloaServer *server, const wlr_pointer_button_event *event) {
@@ -161,16 +163,12 @@ bool handle_panel_click(ArolloaServer *server, const wlr_pointer_button_event *e
         return true;
     }
 
-    double x = server->cursor_x - FOREST_PANEL_MENU_WIDTH;
-    const double icon_size = 28.0;
-    const double spacing = 12.0;
-
-    for (const auto &app : server->ui_state.panel_apps) {
-        if (x >= 0.0 && x <= icon_size + spacing) {
-            spawn_command_async(app.command);
-            return true;
-        }
-        x -= icon_size + spacing;
+    const int hovered = server->ui_state.hovered_panel_index;
+    if (hovered >= 0 && hovered < static_cast<int>(server->ui_state.panel_apps.size())) {
+        const auto &app = server->ui_state.panel_apps[static_cast<std::size_t>(hovered)];
+        spawn_command_async(app.command);
+        show_system_notification(server, "Launching", app.name);
+        return true;
     }
 
     return true;
@@ -253,20 +251,30 @@ void keyboard_handle_key(struct wl_listener *listener, void *data) {
 void cursor_handle_motion(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, cursor_motion);
     auto *event = static_cast<struct wlr_pointer_motion_event *>(data);
-    wlr_cursor_move(server->cursor, event->device, event->delta_x, event->delta_y);
+    struct wlr_input_device *device = nullptr;
+    if (event->pointer) {
+        device = &event->pointer->base;
+    }
+    wlr_cursor_move(server->cursor, device, event->delta_x, event->delta_y);
     server->cursor_x = server->cursor->x;
     server->cursor_y = server->cursor->y;
     mark_last_interaction(server);
+    update_pointer_hover_state(server);
     wlr_seat_pointer_notify_motion(server->seat, event->time_msec, server->cursor_x, server->cursor_y);
 }
 
 void cursor_handle_motion_absolute(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, cursor_motion_absolute);
     auto *event = static_cast<struct wlr_pointer_motion_absolute_event *>(data);
-    wlr_cursor_warp_absolute(server->cursor, event->device, event->x, event->y);
+    struct wlr_input_device *device = nullptr;
+    if (event->pointer) {
+        device = &event->pointer->base;
+    }
+    wlr_cursor_warp_absolute(server->cursor, device, event->x, event->y);
     server->cursor_x = server->cursor->x;
     server->cursor_y = server->cursor->y;
     mark_last_interaction(server);
+    update_pointer_hover_state(server);
     wlr_seat_pointer_notify_motion(server->seat, event->time_msec, server->cursor_x, server->cursor_y);
 }
 
@@ -286,9 +294,84 @@ void cursor_handle_button(struct wl_listener *listener, void *data) {
 void cursor_handle_axis(struct wl_listener *listener, void *data) {
     ArolloaServer *server = wl_container_of(listener, server, cursor_axis);
     auto *event = static_cast<struct wlr_pointer_axis_event *>(data);
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (18 << 8) | 0)
+    wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta,
+                                 event->delta_discrete, event->source, event->relative_direction);
+#else
     wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta,
                                  event->delta_discrete, event->source);
+#endif
+    if (pointer_in_panel(server) && server->ui_state.hovered_tray_index >= 0 &&
+        server->ui_state.hovered_tray_index < static_cast<int>(server->ui_state.tray_icons.size())) {
+        const auto &indicator = server->ui_state.tray_icons[static_cast<std::size_t>(server->ui_state.hovered_tray_index)];
+        if (indicator.label == "VOL") {
+            int delta = 0;
+            if (event->delta_discrete != 0) {
+                delta = static_cast<int>(event->delta_discrete);
+            } else if (std::abs(event->delta) > 0.0) {
+                delta = event->delta > 0.0 ? 1 : -1;
+            }
+            if (delta != 0) {
+                const int new_level = std::clamp(server->ui_state.volume_feedback.level - delta * 2, 0, 100);
+                show_volume_change(server, new_level);
+            }
+        }
+    }
     mark_last_interaction(server);
+}
+
+void show_system_notification(ArolloaServer *server, const std::string &title, const std::string &body) {
+    if (!server) {
+        return;
+    }
+
+    if (!server->ui_state.notifications_enabled) {
+        return;
+    }
+
+    ForestUIState::Notification notification;
+    notification.title = title;
+    notification.body = body;
+    notification.accent = server->ui_state.accent_color;
+    notification.opacity = 0.0f;
+    notification.target_opacity = 1.0f;
+    notification.created = std::chrono::steady_clock::now();
+    server->ui_state.notifications.emplace_back(std::move(notification));
+    if (server->ui_state.notifications.size() > 6) {
+        server->ui_state.notifications.erase(server->ui_state.notifications.begin());
+    }
+}
+
+void show_volume_change(ArolloaServer *server, int level) {
+    if (!server) {
+        return;
+    }
+
+    level = std::clamp(level, 0, 100);
+    server->ui_state.volume_feedback.level = level;
+    server->ui_state.volume_feedback.target_visibility = server->ui_state.notifications_enabled ? 1.0f : 0.0f;
+    server->ui_state.volume_feedback.last_update = std::chrono::steady_clock::now();
+
+    if (!server->ui_state.notifications_enabled) {
+        return;
+    }
+
+    server->ui_state.notifications.erase(std::remove_if(server->ui_state.notifications.begin(),
+            server->ui_state.notifications.end(),
+        [](const ForestUIState::Notification &notification) {
+            return notification.is_volume;
+        }), server->ui_state.notifications.end());
+
+    ForestUIState::Notification notification;
+    notification.title = "Volume";
+    notification.body = std::to_string(level) + "%";
+    notification.accent = server->ui_state.accent_color;
+    notification.opacity = 0.0f;
+    notification.target_opacity = 1.0f;
+    notification.created = server->ui_state.volume_feedback.last_update;
+    notification.is_volume = true;
+    notification.volume_level = level;
+    server->ui_state.notifications.emplace_back(std::move(notification));
 }
 
 void cursor_handle_frame(struct wl_listener *listener, void *data) {
@@ -320,27 +403,13 @@ void ensure_default_cursor(ArolloaServer *server) {
     }
 
     if (server->cursor_mgr) {
-        if (wlr_xcursor_manager_set_cursor_image(server->cursor_mgr, "left_ptr", server->cursor)) {
+        if (auto *xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_mgr, "left_ptr", 1.0f)) {
+            (void)xcursor;
+            wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "left_ptr");
             return;
         }
     }
 
-    if (server->fallback_cursor_pixels.empty()) {
-        server->fallback_cursor_size = 32;
-        server->fallback_cursor_stride = server->fallback_cursor_size * 4;
-        server->fallback_cursor_pixels = build_forest_cursor(server->fallback_cursor_size);
-    }
-
-    if (!server->fallback_cursor_pixels.empty()) {
-        wlr_cursor_set_image(
-            server->cursor,
-            reinterpret_cast<const uint8_t *>(server->fallback_cursor_pixels.data()),
-            static_cast<int32_t>(server->fallback_cursor_stride),
-            server->fallback_cursor_size,
-            server->fallback_cursor_size,
-            1,
-            1);
-    }
 }
 
 void toggle_launcher(ArolloaServer *server) {
@@ -382,6 +451,7 @@ bool activate_launcher_selection(ArolloaServer *server) {
 
     const auto &entry = server->ui_state.launcher_entries[server->ui_state.highlighted_index];
     spawn_command_async(entry.command);
+    show_system_notification(server, "Launching", entry.name);
     server->ui_state.launcher_visible = false;
     mark_last_interaction(server);
     return true;
