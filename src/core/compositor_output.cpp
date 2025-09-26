@@ -114,6 +114,7 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = height,
     };
+
     struct wlr_render_rect_options background_rect = {};
     background_rect.box = background_box;
     background_rect.color = {
@@ -130,6 +131,7 @@ void output_frame(struct wl_listener *listener, void *data) {
         .width = width,
         .height = SwissDesign::PANEL_HEIGHT
     };
+
     struct wlr_render_rect_options panel_rect = {};
     panel_rect.box = panel_box;
     panel_rect.color = {
@@ -180,6 +182,7 @@ void output_frame(struct wl_listener *listener, void *data) {
             .width = surface->current.width,
             .height = surface->current.height
         };
+
 
         struct wlr_render_texture_options texture_options = {};
         texture_options.texture = texture;
@@ -250,7 +253,9 @@ void server_new_output(struct wl_listener *listener, void *data) {
     output->frame.notify = output_frame;
     wl_signal_add(&wlr_output->events.frame, &output->frame);
 
+
     output->request_state.notify = output_request_state;
+
     wl_signal_add(&wlr_output->events.request_state, &output->request_state);
 
     output->destroy.notify = [](struct wl_listener *listener, void *data) {
