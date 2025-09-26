@@ -32,8 +32,10 @@ else()
 endif()
 
 if (NOT WLROOTS_TARGET)
-    set(WLROOTS_FALLBACK_DIR ${CMAKE_BINARY_DIR}/third_party/wlroots)
-    set(WLROOTS_FALLBACK_INSTALL ${WLROOTS_FALLBACK_DIR}/install)
+    set(WLROOTS_VENDOR_ROOT ${CMAKE_BINARY_DIR}/cmake/libs/wlroots)
+    set(WLROOTS_FALLBACK_DIR ${WLROOTS_VENDOR_ROOT}/source)
+    set(WLROOTS_FALLBACK_INSTALL ${WLROOTS_VENDOR_ROOT}/install)
+
 
     include(FetchContent)
     FetchContent_Declare(
@@ -56,14 +58,16 @@ if (NOT WLROOTS_TARGET)
     include(ExternalProject)
     ExternalProject_Add(wlroots_external
         SOURCE_DIR ${wlroots_SOURCE_DIR}
-        BINARY_DIR ${WLROOTS_FALLBACK_DIR}/build
+
+        BINARY_DIR ${WLROOTS_VENDOR_ROOT}/build
         CONFIGURE_COMMAND
-            ${MESON_EXECUTABLE} setup ${WLROOTS_FALLBACK_DIR}/build ${wlroots_SOURCE_DIR}
+            ${MESON_EXECUTABLE} setup ${WLROOTS_VENDOR_ROOT}/build ${wlroots_SOURCE_DIR}
             --prefix ${WLROOTS_FALLBACK_INSTALL}
             --buildtype release
             --default-library shared
-        BUILD_COMMAND ${MESON_EXECUTABLE} compile -C ${WLROOTS_FALLBACK_DIR}/build
-        INSTALL_COMMAND ${MESON_EXECUTABLE} install -C ${WLROOTS_FALLBACK_DIR}/build
+        BUILD_COMMAND ${MESON_EXECUTABLE} compile -C ${WLROOTS_VENDOR_ROOT}/build
+        INSTALL_COMMAND ${MESON_EXECUTABLE} install -C ${WLROOTS_VENDOR_ROOT}/build
+
         BUILD_BYPRODUCTS ${WLROOTS_FALLBACK_INSTALL}/lib/pkgconfig/wlroots.pc
     )
 

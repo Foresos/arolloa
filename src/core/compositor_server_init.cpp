@@ -148,6 +148,7 @@ void server_init(ArolloaServer *server) {
 
     server->initialized = false;
     server->session = nullptr;
+    server->allocator = nullptr;
 
     ensure_runtime_dir();
     setup_debug_environment(server);
@@ -190,11 +191,32 @@ void server_init(ArolloaServer *server) {
         return;
     }
 
+    server->allocator = wlr_allocator_autocreate(server->backend, server->renderer);
+    if (!server->allocator) {
+        wlr_log(WLR_ERROR, "Failed to create allocator");
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
+#if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
+        if (server->session) {
+            wlr_session_destroy(server->session);
+            server->session = nullptr;
+        }
+#endif
+        wlr_backend_destroy(server->backend);
+        server->backend = nullptr;
+
+        destroy_display(server);
+
+        return;
+    }
+
     wlr_renderer_init_wl_display(server->renderer, server->wl_display);
 
     server->compositor = create_compositor(server->wl_display, server->renderer);
     if (!server->compositor) {
         wlr_log(WLR_ERROR, "Failed to create compositor global");
+        wlr_allocator_destroy(server->allocator);
+        server->allocator = nullptr;
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
@@ -216,6 +238,10 @@ void server_init(ArolloaServer *server) {
         wlr_log(WLR_ERROR, "Failed to create xdg-shell global");
 
         server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
@@ -285,6 +311,10 @@ void server_init(ArolloaServer *server) {
         server->xdg_shell = nullptr;
         destroy_compositor(server->compositor);
         server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)
@@ -320,6 +350,10 @@ void server_init(ArolloaServer *server) {
         server->xdg_shell = nullptr;
         destroy_compositor(server->compositor);
         server->compositor = nullptr;
+        if (server->allocator) {
+            wlr_allocator_destroy(server->allocator);
+            server->allocator = nullptr;
+        }
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
 #if defined(WLR_VERSION_NUM) && WLR_VERSION_NUM >= ((0 << 16) | (17 << 8) | 0)

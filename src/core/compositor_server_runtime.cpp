@@ -94,6 +94,11 @@ void server_destroy(ArolloaServer *server) {
         server->output_layout = nullptr;
     }
 
+    if (server->allocator) {
+        wlr_allocator_destroy(server->allocator);
+        server->allocator = nullptr;
+    }
+
     if (server->decoration_manager) {
         destroy_decoration_manager(server->decoration_manager);
         server->decoration_manager = nullptr;
@@ -107,6 +112,11 @@ void server_destroy(ArolloaServer *server) {
     if (server->compositor) {
         destroy_compositor(server->compositor);
         server->compositor = nullptr;
+    }
+
+    if (server->renderer) {
+        wlr_renderer_destroy(server->renderer);
+        server->renderer = nullptr;
     }
 
     if (server->backend) {
