@@ -54,6 +54,20 @@ struct wlr_xdg_shell *create_xdg_shell(struct wl_display *display) {
 #endif
 }
 
+void destroy_display(ArolloaServer *server) {
+    if (!server || !server->wl_display) {
+        return;
+    }
+
+    wl_display_destroy_clients(server->wl_display);
+    wl_display_destroy(server->wl_display);
+    server->wl_display = nullptr;
+    server->compositor = nullptr;
+    server->xdg_shell = nullptr;
+    server->decoration_manager = nullptr;
+
+}
+
 void ensure_runtime_dir() {
     const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
     if (runtime_dir && runtime_dir[0] != '\0') {
@@ -117,6 +131,9 @@ void server_init(ArolloaServer *server) {
             server->session = nullptr;
         }
 #endif
+
+        destroy_display(server);
+
         return;
     }
 
@@ -131,6 +148,9 @@ void server_init(ArolloaServer *server) {
 #endif
         wlr_backend_destroy(server->backend);
         server->backend = nullptr;
+
+        destroy_display(server);
+
         return;
     }
 
@@ -149,13 +169,16 @@ void server_init(ArolloaServer *server) {
 #endif
         wlr_backend_destroy(server->backend);
         server->backend = nullptr;
+
+        destroy_display(server);
+
         return;
     }
 
     server->xdg_shell = create_xdg_shell(server->wl_display);
     if (!server->xdg_shell) {
         wlr_log(WLR_ERROR, "Failed to create xdg-shell global");
-        wlr_compositor_destroy(server->compositor);
+
         server->compositor = nullptr;
         wlr_renderer_destroy(server->renderer);
         server->renderer = nullptr;
@@ -167,6 +190,7 @@ void server_init(ArolloaServer *server) {
 #endif
         wlr_backend_destroy(server->backend);
         server->backend = nullptr;
+
         return;
     }
 

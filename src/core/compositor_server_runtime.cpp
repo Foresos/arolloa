@@ -12,6 +12,19 @@ void handle_signal(int sig) {
         wl_display_terminate(g_server->wl_display);
     }
 }
+
+void destroy_display(ArolloaServer *server) {
+    if (!server || !server->wl_display) {
+        return;
+    }
+
+    wl_display_destroy_clients(server->wl_display);
+    wl_display_destroy(server->wl_display);
+    server->wl_display = nullptr;
+    server->compositor = nullptr;
+    server->xdg_shell = nullptr;
+    server->decoration_manager = nullptr;
+}
 } // namespace
 
 void server_run(ArolloaServer *server) {
@@ -87,11 +100,7 @@ void server_destroy(ArolloaServer *server) {
         server->pango_layout = nullptr;
     }
 
-    if (server->wl_display) {
-        wl_display_destroy_clients(server->wl_display);
-        wl_display_destroy(server->wl_display);
-        server->wl_display = nullptr;
-    }
+    destroy_display(server);
 
     server->animations.clear();
     server->initialized = false;
